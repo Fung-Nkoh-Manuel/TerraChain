@@ -267,31 +267,420 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
             // Load section content
             loadSectionContent(section);
         }
-        
+
         async function loadSectionContent(section) {
             const el = document.getElementById('section-' + section);
             if (!el || el.dataset.loaded === 'true') return;
             
+            // Show loading
+            el.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+            
             try {
-                const res = await fetch('api/sections/' + section);
-                const html = await res.text();
-                el.innerHTML = html;
+                // Load from API instead of direct PHP file
+                const endpoints = {
+                    'my-properties': '../api/parcels/my',
+                    'register': null,  // Form is inline
+                    'browse': '../api/parcels/all',
+                    'kyc': '../api/kyc/status',
+                    'transfers': '../api/transfers/my',
+                    'disputes': '../api/disputes/all',
+                    'profile': null
+                };
+                
+                if (endpoints[section]) {
+                    const res = await fetch(endpoints[section], { credentials: 'same-origin' });
+                    const data = await res.json();
+                    
+                    if (data.success) {
+                        renderSectionContent(section, data.data);
+                    } else {
+                        el.innerHTML = '<div class="empty-state"><p>No data available</p></div>';
+                    }
+                } else if (section === 'register') {
+                    // Registration form is handled separately
+                    await loadRegistrationForm(el);
+                } else if (section === 'profile') {
+                    // Profile section
+                    await loadProfileSection(el);
+                }
+                
                 el.dataset.loaded = 'true';
             } catch(e) {
+                console.error('Failed to load section:', e);
                 el.innerHTML = '<div class="error-state">Failed to load section</div>';
             }
         }
-        
-        function logout() {
-            fetch('api/auth/logout', { method: 'POST' })
-                .then(() => window.location.href = 'index.php');
+
+        function renderSectionContent(section, data) {
+            const el = document.getElementById('section-' + section);
+            
+            switch(section) {
+                case 'my-properties':
+                    renderMyProperties(el, data);
+                    break;
+                case 'browse':
+                    renderBrowseProperties(el, data);
+                    break;
+                case 'kyc':
+                    renderKYCStatus(el, data);
+                    break;
+                case 'transfers':
+                    renderTransfers(el, data);
+                    break;
+                case 'disputes':
+                    renderDisputes(el, data);
+                    break;
+            }
         }
-        
+
+        function renderMyProperties(el, properties) {
+            if (!properties || properties.length === 0) {
+                el.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">🏚️</div>
+                        <p>No properties registered yet</p>
+                        <button class="btn btn-primary" onclick="showSection('register')">Register Your First Property</button>
+                    </div>`;
+                return;
+            }
+            
+            el.innerHTML = `
+                <div class="property-grid">
+                    ${properties.map(p => `
+                        <div class="property-card">
+                            <div class="property-card-header">
+                                <div>
+                                    <div class="property-card-title">${escapeHtml(p.title)}</div>
+                                    <div class="property-card-number">${escapeHtml(p.parcel_number)}</div>
+                                </div>
+                                <span class="badge badge-green">${escapeHtml(p.status)}</span>
+                            </div>
+                            <div class="property-card-location">📍 ${escapeHtml(p.location_address)}</div>
+                            <div class="property-card-details">
+                                <div class="property-detail">
+                                    <div class="property-detail-label">Type</div>
+                                    <div class="property-detail-value">${escapeHtml(p.property_type)}</div>
+                                </div>
+                                <div class="property-detail">
+                                    <div class="property-detail-label">Size</div>
+                                    <div class="property-detail-value">${p.size_sqm || '—'} m²</div>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>`;
+        }
+
+        function renderBrowseProperties(el, properties) {
+            if (!properties || properties.length === 0) {
+                el.innerHTML = '<div class="empty-state"><p>No properties found</p></div>';
+                return;
+            }
+            
+            el.innerHTML = `
+                <div class="card">
+                    <div class="card-header">
+                        <h2>All Registered Properties</h2>
+                        <input type="text" id="searchInput" placeholder="Search..." 
+                               onkeyup="searchProperties(this.value)" 
+                               style="max-width:300px;">
+                    </div>
+                    <div class="property-grid" id="browseGrid">
+                        ${properties.map(p => `
+                            <div class="property-card" data-search="${escapeHtml(p.title)} ${escapeHtml(p.location_address)}">
+                                <div class="property-card-header">
+                                    <div>
+                                        <div class="property-card-title">${escapeHtml(p.title)}</div>
+                                        <div class="property-card-number">${escapeHtml(p.parcel_number)}</div>
+                                    </div>
+                                    <span class="badge badge-${p.status === 'owned' ? 'green' : 'yellow'}">${escapeHtml(p.status)}</span>
+                                </div>
+                                <div class="property-card-location">📍 ${escapeHtml(p.location_address)}</div>
+                                <div class="property-card-details">
+                                    <div class="property-detail">
+                                        <div class="property-detail-label">Type</div>
+                                        <div class="property-detail-value">${escapeHtml(p.property_type)}</div>
+                                    </div>
+                                    <div class="property-detail">
+                                        <div class="property-detail-label">Owner</div>
+                                        <div class="property-detail-value">${escapeHtml(p.owner_name || 'N/A')}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>`;
+        }
+
+        function renderKYCStatus(el, kycData) {
+            const status = kycData?.status || 'not_submitted';
+            
+            const statusConfig = {
+                'not_submitted': {
+                    class: 'not-submitted',
+                    icon: '📋',
+                    title: 'KYC Not Submitted',
+                    text: 'You need to verify your identity before registering land.',
+                    action: '<button class="btn btn-primary" onclick="showKYCDropzone()">Submit KYC Now</button>'
+                },
+                'pending': {
+                    class: 'pending',
+                    icon: '⏳',
+                    title: 'KYC Under Review',
+                    text: 'Your documents are being reviewed. This usually takes 1-2 business days.',
+                    action: ''
+                },
+                'verified': {
+                    class: 'verified',
+                    icon: '✅',
+                    title: 'KYC Verified',
+                    text: 'Your identity has been verified. You can now register land.',
+                    action: ''
+                },
+                'rejected': {
+                    class: 'rejected',
+                    icon: '❌',
+                    title: 'KYC Rejected',
+                    text: kycData?.rejection_reason || 'Your documents were not accepted.',
+                    action: '<button class="btn btn-primary" onclick="showKYCDropzone()">Resubmit KYC</button>'
+                }
+            };
+            
+            const cfg = statusConfig[status] || statusConfig['not_submitted'];
+            
+            el.innerHTML = `
+                <div class="card">
+                    <div class="card-header">
+                        <h2>KYC Verification</h2>
+                    </div>
+                    <div class="kyc-status ${cfg.class}">
+                        <div class="kyc-status-icon">${cfg.icon}</div>
+                        <div class="kyc-status-title">${cfg.title}</div>
+                        <div class="kyc-status-text">${cfg.text}</div>
+                        ${cfg.action ? `<div style="margin-top:16px;">${cfg.action}</div>` : ''}
+                    </div>
+                    <div id="kycDropzone" style="display:none;">
+                        <form id="kycForm" enctype="multipart/form-data">
+                            <div class="file-upload-area">
+                                <input type="file" name="documents[]" multiple accept=".pdf,.jpg,.jpeg,.png" required>
+                                <div class="file-upload-text">
+                                    <div style="font-size:32px;">🪪</div>
+                                    <p>Drop KYC documents or <span>click to browse</span></p>
+                                    <p style="font-size:12px;color:var(--text3);">National ID, Passport, Utility Bill</p>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-full" style="margin-top:16px;">Submit KYC</button>
+                        </form>
+                    </div>
+                </div>`;
+        }
+
+        function renderTransfers(el, transfers) {
+            if (!transfers || transfers.length === 0) {
+                el.innerHTML = `
+                    <div class="card">
+                        <div class="card-header"><h2>My Transfers</h2></div>
+                        <div class="empty-state">
+                            <div class="empty-icon">⇄</div>
+                            <p>No transfers yet</p>
+                        </div>
+                    </div>`;
+                return;
+            }
+            
+            el.innerHTML = `
+                <div class="card">
+                    <div class="card-header"><h2>My Transfers</h2></div>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr><th>ID</th><th>Parcel</th><th>Type</th><th>Status</th><th>Date</th></tr>
+                            </thead>
+                            <tbody>
+                                ${transfers.map(t => `
+                                    <tr>
+                                        <td>#${t.id}</td>
+                                        <td>${escapeHtml(t.parcel_title || 'N/A')}</td>
+                                        <td>${escapeHtml(t.transfer_type)}</td>
+                                        <td><span class="badge badge-${t.status === 'completed' ? 'green' : 'yellow'}">${t.status}</span></td>
+                                        <td>${formatDate(t.created_at)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>`;
+        }
+
+        function renderDisputes(el, disputes) {
+            if (!disputes || disputes.length === 0) {
+                el.innerHTML = `
+                    <div class="card">
+                        <div class="card-header"><h2>My Disputes</h2></div>
+                        <div class="empty-state">
+                            <div class="empty-icon">⚖️</div>
+                            <p>No disputes filed</p>
+                        </div>
+                    </div>`;
+                return;
+            }
+            
+            el.innerHTML = `
+                <div class="card">
+                    <div class="card-header"><h2>My Disputes</h2></div>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr><th>ID</th><th>Parcel</th><th>Type</th><th>Status</th><th>Date</th></tr>
+                            </thead>
+                            <tbody>
+                                ${disputes.map(d => `
+                                    <tr>
+                                        <td>#${d.id}</td>
+                                        <td>${escapeHtml(d.parcel_title || 'N/A')}</td>
+                                        <td>${escapeHtml(d.dispute_type)}</td>
+                                        <td><span class="badge badge-${d.status === 'open' ? 'yellow' : 'blue'}">${d.status}</span></td>
+                                        <td>${formatDate(d.created_at)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>`;
+        }
+
+        async function loadRegistrationForm(el) {
+            el.innerHTML = `
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Register New Land</h2>
+                    </div>
+                    <form id="registrationForm" enctype="multipart/form-data">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Title *</label>
+                                <input type="text" name="title" required placeholder="e.g. Plot 45A Mfoundi">
+                            </div>
+                            <div class="form-group">
+                                <label>Location *</label>
+                                <input type="text" name="location_address" required placeholder="e.g. Yaoundé, Centre, Cameroon">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Size (m²)</label>
+                                <input type="number" name="size_sqm" placeholder="500">
+                            </div>
+                            <div class="form-group">
+                                <label>Property Type</label>
+                                <select name="property_type">
+                                    <option value="residential">Residential</option>
+                                    <option value="commercial">Commercial</option>
+                                    <option value="agricultural">Agricultural</option>
+                                    <option value="industrial">Industrial</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Description</label>
+                            <textarea name="description" placeholder="Describe the property..."></textarea>
+                        </div>
+                        <div class="file-upload-area">
+                            <input type="file" name="documents[]" multiple accept=".pdf,.jpg,.jpeg,.png">
+                            <div class="file-upload-text">
+                                <div style="font-size:32px;">📄</div>
+                                <p>Drop documents or <span>click to browse</span></p>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-full" style="margin-top:16px;">
+                            Submit Registration
+                        </button>
+                    </form>
+                </div>`;
+            
+            // Initialize form handler
+            document.getElementById('registrationForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                const formData = new FormData(this);
+                try {
+                    const res = await fetch('../api/parcels/submit', {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'same-origin'
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        toast('Registration submitted!', 'success');
+                        this.reset();
+                    } else {
+                        toast(data.data?.error || 'Submission failed', 'error');
+                    }
+                } catch(err) {
+                    toast('Network error', 'error');
+                }
+            });
+        }
+
+        async function loadProfileSection(el) {
+            const res = await fetch('../api/auth/me', { credentials: 'same-origin' });
+            const data = await res.json();
+            const user = data.data?.user || {};
+            
+            el.innerHTML = `
+                <div class="card">
+                    <div class="card-header"><h2>My Profile</h2></div>
+                    <div class="info-row">
+                        <span>Username</span>
+                        <span>${escapeHtml(user.username || '—')}</span>
+                    </div>
+                    <div class="info-row">
+                        <span>Email</span>
+                        <span>${escapeHtml(user.email || '—')}</span>
+                    </div>
+                    <div class="info-row">
+                        <span>Full Name</span>
+                        <span>${escapeHtml(user.full_name || '—')}</span>
+                    </div>
+                    <div class="info-row">
+                        <span>Role</span>
+                        <span class="badge badge-blue">${escapeHtml(user.role || 'user')}</span>
+                    </div>
+                </div>`;
+        }
+
+        function searchProperties(query) {
+            const cards = document.querySelectorAll('#browseGrid .property-card');
+            const q = query.toLowerCase();
+            cards.forEach(card => {
+                const searchData = card.dataset.search?.toLowerCase() || '';
+                card.style.display = searchData.includes(q) ? '' : 'none';
+            });
+        }
+
+        function showKYCDropzone() {
+            const dropzone = document.getElementById('kycDropzone');
+            if (dropzone) dropzone.style.display = 'block';
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '—';
+            return new Date(dateStr).toLocaleDateString('en-US', { 
+                month: 'short', day: 'numeric', year: 'numeric' 
+            });
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
         function toggleNotifications() {
             const panel = document.getElementById('notifPanel');
             panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
         }
-        
+
         function markAllRead() {
             fetch('api/notifications/read-all', { method: 'POST' });
         }
