@@ -1,0 +1,153 @@
+/* ============================================================
+   TerraChain v2 — Admin Panel Styles
+   ============================================================ */
+
+/* Admin sidebar has a slightly different background */
+.admin-sidebar {
+    background: rgba(0, 229, 160, 0.02);
+}
+
+/* Tab content visibility */
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+    animation: fadeIn 0.25s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Action buttons in table cells */
+.action-buttons {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    white-space: nowrap;
+}
+
+.action-buttons .btn {
+    flex-shrink: 0;
+}
+
+/* Hash display */
+.hash {
+    display: block;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--text3);
+    margin-top: 4px;
+    word-break: break-all;
+}
+
+/* Blockchain info */
+.blockchain-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* Wallet connect section */
+.wallet-connect-section {
+    text-align: center;
+    padding: 40px 20px;
+}
+
+.wallet-connect-section p {
+    color: var(--text2);
+    margin-bottom: 20px;
+    font-size: 14px;
+}
+
+.wallet-connect-section .btn {
+    font-size: 16px;
+    padding: 12px 28px;
+}
+
+.wallet-info {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Modal for reject reason */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    animation: fadeIn 0.2s ease;
+}
+
+.modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px;
+    max-width: 480px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.modal-header h3 {
+    font-family: 'Syne', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: var(--text3);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+}
+
+.modal-close:hover {
+    color: var(--text);
+}
+
+.modal-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .admin-sidebar {
+        width: 200px;
+    }
+    
+    .action-buttons {
+        flex-direction: column;
+    }
+    
+    .main-header {
+        flex-direction: column;
+        gap: 12px;
+    }
+    
+    .header-right {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+}

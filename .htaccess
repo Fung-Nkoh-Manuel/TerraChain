@@ -1,0 +1,13 @@
+RewriteEngine On
+RewriteBase /terrachain-v2/
+
+# Don't rewrite if file or directory exists
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Route API requests
+RewriteRule ^api/(.*)$ api/router.php [QSA,L]
+
+# Route everything else to public
+RewriteRule ^(.*)$ public/$1 [L]
