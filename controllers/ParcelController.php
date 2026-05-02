@@ -113,7 +113,12 @@ class ParcelController {
         
         // Get registration details
         $db = Database::getConnection();
-        $stmt = $db->prepare('SELECT r.*, p.document_hash, p.owner_id FROM pending_registrations r JOIN parcels p ON r.parcel_id = p.id WHERE r.id = ?');
+        $stmt = $db->prepare('
+            SELECT r.*, p.document_hash, p.owner_id, p.title 
+            FROM pending_registrations r 
+            JOIN parcels p ON r.parcel_id = p.id 
+            WHERE r.id = ?
+        ');
         $stmt->execute([$data['registration_id']]);
         $reg = $stmt->fetch();
         
@@ -121,39 +126,79 @@ class ParcelController {
             $this->respond(false, 'Registration not found', 404);
         }
         
-        // Blockchain interaction (admin-only)
+        // ─── BLOCKCHAIN INTERACTION (admin-only) ───
         $txHash = null;
-        if ($this->blockchain->isEnabled()) {
+        
+        if ($this->blockchain->isEnabled() && $reg['document_hash']) {
+            
+            // STEP 1: Check if user has a wallet address
             $ownerWallet = $this->userModel->getWalletAddress($reg['owner_id']);
-            if ($ownerWallet && $reg['document_hash']) {
-                $result = $this->blockchain->recordLandRegistration($reg['document_hash'], $ownerWallet);
-                if ($result['success']) {
-                    $txHash = $result['tx_hash'];
-                }
+            
+            // STEP 2: If no wallet, GENERATE ONE for the user
+            if (!$ownerWallet) {
+                $ownerWallet = $this->generateWalletForUser($reg['owner_id']);
+            }
+            
+            // STEP 3: Now we have a wallet, record on blockchain
+            $result = $this->blockchain->recordLandRegistration(
+                $reg['document_hash'], 
+                $ownerWallet
+            );
+            
+            if ($result['success']) {
+                $txHash = $result['tx_hash'];
+            } else {
+                // Log error but continue with MySQL approval
+                error_log('Blockchain recording failed: ' . ($result['error'] ?? 'Unknown error'));
             }
         }
         
-        // Approve in database
-        $this->parcelModel->approveRegistration($data['registration_id'], $admin['id'], $txHash);
+        // Approve in database (always do this, with or without blockchain)
+        $this->parcelModel->approveRegistration(
+            $data['registration_id'], 
+            $admin['id'], 
+            $txHash
+        );
         
         // Notify applicant
-        $stmt = $db->prepare('SELECT p.title, p.id as parcel_id FROM parcels p WHERE p.id = ?');
-        $stmt->execute([$reg['parcel_id']]);
-        $parcel = $stmt->fetch();
-        
         $this->notifications->send(
             $reg['applicant_id'],
             'registration_approved',
             'Registration Approved ✓',
-            "Your land parcel \"{$parcel['title']}\" has been approved and recorded.",
-            $parcel['parcel_id'],
+            "Your land parcel \"{$reg['title']}\" has been approved and recorded.",
+            $reg['parcel_id'],
             'parcel'
         );
         
         $this->respond(true, [
             'message' => 'Registration approved',
-            'blockchain_tx' => $txHash
+            'blockchain_tx' => $txHash,
+            'wallet_generated' => !empty($ownerWallet)
         ]);
+    }
+
+    /**
+     * Generate a deterministic wallet address for a user
+     * This creates a unique wallet for each user based on their ID
+     */
+    private function generateWalletForUser(int $userId): string {
+        // Create a deterministic private key from user ID + system secret
+        $seed = "terrachain_user_{$userId}_" . ($_ENV['WALLET_SECRET'] ?? 'default_secret_change_me');
+        $privateKey = '0x' . hash('sha256', $seed);
+        
+        // Derive the Ethereum address from the private key
+        // In production, use a proper Ethereum library like web3.php or ethers
+        $address = '0x' . substr(hash('sha256', $privateKey), 0, 40);
+        
+        // Save to database
+        $this->userModel->assignWalletAddress($userId, $address);
+        
+        // Log the wallet generation
+        $db = Database::getConnection();
+        $db->prepare('INSERT INTO audit_log (user_id, action, entity_type, entity_id, notes) VALUES (?, ?, ?, ?, ?)')
+           ->execute([$userId, 'wallet_generated', 'user', $userId, "System-generated wallet: {$address}"]);
+        
+        return $address;
     }
     
     /**
