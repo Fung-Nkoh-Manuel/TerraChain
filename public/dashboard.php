@@ -1043,13 +1043,14 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
             }
             
             statusDiv.style.display = 'block';
-            statusDiv.innerHTML = '<span style="color:#4d9eff;">🔍 Reading document... This may take a few seconds.</span>';
+            statusDiv.innerHTML = '<span style="color:#4d9eff;">🔍 Reading document. This may take a few seconds...</span>';
             parseBtn.disabled = true;
             
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
             
             try {
+                // ✅ Use the correct endpoint
                 const res = await fetch('../api/upload?action=parse', {
                     method: 'POST',
                     body: formData,
@@ -1060,9 +1061,9 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                 console.log('Parse Response:', data);
                 
                 if (data.success && data.data?.parsed_text) {
-                    const parsed = parseDocumentText(data.data.parsed_text);
+                    const text = data.data.parsed_text;
+                    const parsed = parseDocumentText(text);
                     
-                    // Autofill fields
                     let filledCount = 0;
                     
                     if (parsed.title && !document.getElementById('regTitle').value) {
@@ -1074,58 +1075,96 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                         filledCount++;
                     }
                     if (parsed.size && !document.getElementById('regSize').value) {
-                        document.getElementById('regSize').value = parsed.size;
+                        document.getElementById('regSize').value = parsed.size.replace(/[^0-9.]/g, '');
                         filledCount++;
                     }
                     if (parsed.gps && !document.getElementById('regGPS').value) {
-                        document.getElementById('regGPS').value = parsed.gps;
+                        let gps = parsed.gps.replace(/[°]/g, '').replace(/[NSEW]/gi, '').replace(/\s+/g, ' ').trim();
+                        document.getElementById('regGPS').value = gps;
                         filledCount++;
                     }
                     if (parsed.description && !document.getElementById('regDesc').value) {
                         document.getElementById('regDesc').value = parsed.description;
                         filledCount++;
                     }
+                    if (parsed.property_type && !document.getElementById('regType').value) {
+                        const typeSelect = document.getElementById('regType');
+                        const typeNormalized = parsed.property_type.toLowerCase();
+                        if (typeNormalized.includes('residential')) typeSelect.value = 'residential';
+                        else if (typeNormalized.includes('commercial')) typeSelect.value = 'commercial';
+                        else if (typeNormalized.includes('agricultural')) typeSelect.value = 'agricultural';
+                        else if (typeNormalized.includes('industrial')) typeSelect.value = 'industrial';
+                        if (typeSelect.value) filledCount++;
+                    }
                     
                     statusDiv.innerHTML = `
                         <div style="color:#00e5a0;font-weight:600;">✅ Document read successfully!</div>
                         <div style="margin-top:4px;">${filledCount} field(s) auto-filled from document.</div>
-                        <div style="font-size:11px;color:var(--text3);margin-top:4px;max-height:80px;overflow:auto;">Preview: ${escapeHtml(data.data.parsed_text.substring(0, 200))}...</div>
+                        <div style="font-size:11px;color:var(--text3);margin-top:4px;max-height:60px;overflow:auto;">
+                            Preview: ${escapeHtml(text.substring(0, 150))}...
+                        </div>
                     `;
                     
-                    if (filledCount > 0) {
-                        toast(`${filledCount} field(s) auto-filled from document`, 'success');
-                    }
-                } else {
+                    if (filledCount > 0) toast(`${filledCount} field(s) auto-filled`, 'success');
+                } else if (data.success && !data.data?.parsed_text) {
                     statusDiv.innerHTML = `
                         <div style="color:#ffcc00;">⚠️ Could not extract text from this document.</div>
-                        <div style="font-size:12px;margin-top:4px;">Please fill in the fields manually. The document will still be uploaded.</div>
+                        <div style="font-size:12px;margin-top:4px;">Please fill in the fields manually.</div>
                     `;
-                    toast('Could not auto-read document. Fill fields manually.', 'warn');
+                } else {
+                    statusDiv.innerHTML = `<div style="color:#ff3b5c;">❌ ${data.data?.error || 'Parsing failed'}</div>`;
                 }
             } catch(err) {
                 console.error('Parse Error:', err);
-                statusDiv.innerHTML = '<div style="color:#ff3b5c;">❌ Document parsing failed. Please fill fields manually.</div>';
+                statusDiv.innerHTML = '<div style="color:#ff3b5c;">❌ Network error. Please try again.</div>';
             } finally {
                 parseBtn.disabled = false;
             }
         }
 
-        // Parse extracted text into structured data
         function parseDocumentText(text) {
+            console.log('Parsing text:', text.substring(0, 500));
             const cleaned = text.replace(/\r/g, '').replace(/\n{2,}/g, '\n').trim();
             
             return {
-                title: extractField(cleaned, /(?:title|parcel name|property name)[:\-]?\s*(.+)/i),
-                location: extractField(cleaned, /(?:location|address|site)[:\-]?\s*(.+)/i),
-                size: extractField(cleaned, /(?:size|area|surface)[:\-]?\s*(\d+(?:\.\d+)?)/i),
-                gps: extractField(cleaned, /(?:gps|coordinates|lat[:\-]?\s*[0-9.]+)[,\s]*[0-9.]*/i),
-                description: extractField(cleaned, /(?:description|details|notes)[:\-]?\s*(.+)/i)
+                title: extractField(cleaned, [
+                    /Official Title\s*:\s*(.+?)(?:\n|$)/i,
+                    /Description\s*:\s*(.+?)(?:Quarter|,)/i,
+                ]),
+                location: extractField(cleaned, [
+                    /Physical Address\s*:\s*(.+?)(?:\n|$)/i,
+                    /Address\s*:\s*(.+?)(?:\n|$)/i,
+                ]),
+                size: extractField(cleaned, [
+                    /Total Area\s*:\s*(\d+(?:\.\d+)?)/i,
+                    /Area\s*:\s*(\d+(?:\.\d+)?)/i,
+                    /(\d+(?:\.\d+)?)\s*square\s*metres?/i,
+                ]),
+                gps: extractField(cleaned, [
+                    /GPS (?:Coordinates|Centre)\s*:\s*([0-9.]+\s*°?\s*[NS],?\s*[0-9.]+\s*°?\s*[EW])/i,
+                ]),
+                description: extractField(cleaned, [
+                    /Topography\s*:\s*(.+?)(?:\n|$)/i,
+                    /Land Boundaries\s*:\s*(.+?)(?:\n\n|\n(?:Topography|Land Use))/is,
+                ]),
+                property_type: extractField(cleaned, [
+                    /Property Type\s*:\s*(.+?)(?:\n|$)/i,
+                    /Land Use Zoning\s*:\s*(.+?)(?:\n|$)/i,
+                ]),
             };
         }
 
-        function extractField(text, regex) {
-            const match = text.match(regex);
-            return match ? match[1].trim().replace(/[^a-zA-Z0-9\s.,°\-]/g, '') : null;
+        function extractField(text, patterns) {
+            if (!Array.isArray(patterns)) patterns = [patterns];
+            
+            for (const pattern of patterns) {
+                const match = text.match(pattern);
+                if (match && match[1]) {
+                    let value = match[1].trim().replace(/\s+/g, ' ').replace(/[,;.]+$/, '').trim();
+                    if (value.length > 0 && value.length < 500) return value;
+                }
+            }
+            return null;
         }
     </script>
 </body>

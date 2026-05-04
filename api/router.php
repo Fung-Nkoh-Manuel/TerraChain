@@ -31,6 +31,7 @@ require_once __DIR__ . '/../controllers/KYCController.php';
 require_once __DIR__ . '/../controllers/TransferController.php';
 require_once __DIR__ . '/../controllers/DisputeController.php';
 require_once __DIR__ . '/../controllers/NotificationController.php';
+require_once __DIR__ . '/../controllers/UploadController.php';
 
 // Parse route
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
@@ -81,6 +82,9 @@ $routes = [
     'GET /api/notifications/list' => ['NotificationController', 'list'],
     'POST /api/notifications/read-all' => ['NotificationController', 'markAllRead'],
     'POST /api/notifications/mark-read-one' => ['NotificationController', 'markReadOne'],
+    
+    // Upload & Document Parsing
+    'POST /api/upload' => ['UploadController', 'upload'],
 ];
 
 $routeKey = $method . ' ' . $uri;
