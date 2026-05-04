@@ -502,52 +502,97 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                         <div class="kyc-status-icon">${cfg.icon}</div>
                         <div class="kyc-status-title">${cfg.title}</div>
                         <div class="kyc-status-text">${cfg.text}</div>
-                        ${cfg.action ? `<div style="margin-top:16px;">${cfg.action}</div>` : ''}
+                        ${cfg.action ? '<div style="margin-top:16px;">' + cfg.action + '</div>' : ''}
                     </div>
-                    <div id="kycDropzone" style="display:none;">
+                    <div id="kycDropzone" style="display:none; margin-top:20px;">
                         <form id="kycForm" enctype="multipart/form-data">
-                            <div class="file-upload-area">
-                                <input type="file" name="documents[]" multiple accept=".pdf,.jpg,.jpeg,.png" required>
-                                <div class="file-upload-text">
+                            <div class="file-upload-area" id="kycFileArea">
+                                <input type="file" name="documents[]" id="kycFileInput" multiple accept=".pdf,.jpg,.jpeg,.png" required>
+                                <div class="file-upload-text" id="kycFileText">
                                     <div style="font-size:32px;">🪪</div>
                                     <p>Drop KYC documents or <span>click to browse</span></p>
                                     <p style="font-size:12px;color:var(--text3);">National ID, Passport, Utility Bill</p>
                                 </div>
                             </div>
-                    <button type="submit" class="btn btn-primary btn-full" style="margin-top:16px;">Submit KYC</button>
-                </form>
-            </div>
-        </div>`;
-    
-    // ✅ Re-initialize file upload areas
-    initFileUploadAreas();
-    
-    // Initialize KYC form
-    const kycForm = document.getElementById('kycForm');
-    if (kycForm) {
-        kycForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            const formData = new FormData(this);
-            try {
-                const res = await fetch('../api/kyc/submit', {
-                    method: 'POST',
-                    body: formData,
-                    credentials: 'same-origin'
+                            <button type="submit" class="btn btn-primary btn-full" style="margin-top:16px;" id="kycSubmitBtn">
+                                <span class="btn-text">Submit KYC</span>
+                                <span class="spinner" style="display:none;"></span>
+                            </button>
+                        </form>
+                    </div>
+                </div>`;
+            
+            // Re-initialize file upload areas
+            setTimeout(() => initFileUploadAreas(), 100);
+            
+            // Attach KYC form submit handler
+            const kycForm = document.getElementById('kycForm');
+            if (kycForm) {
+                kycForm.addEventListener('submit', async function(e) {
+                    e.preventDefault();
+                    
+                    // Check if files are selected
+                    const fileInput = document.getElementById('kycFileInput');
+                    if (!fileInput || fileInput.files.length === 0) {
+                        toast('Please select at least one document', 'warn');
+                        return;
+                    }
+                    
+                    const btn = document.getElementById('kycSubmitBtn');
+                    const btnText = btn.querySelector('.btn-text');
+                    const spinner = btn.querySelector('.spinner');
+                    
+                    btn.disabled = true;
+                    btnText.style.display = 'none';
+                    if (spinner) spinner.style.display = 'inline-block';
+                    
+                    const formData = new FormData(this);
+                    
+                    try {
+                        // Upload to IPFS first
+                        toast('Uploading documents to IPFS...', 'info');
+                        
+                        const res = await fetch('../api/kyc/submit', {
+                            method: 'POST',
+                            body: formData,
+                            credentials: 'same-origin'
+                        });
+                        
+                        const data = await res.json();
+                        console.log('KYC Response:', data);
+                        
+                        if (data.success) {
+                            toast('KYC submitted successfully! Awaiting verification.', 'success');
+                            this.reset();
+                            document.getElementById('kycDropzone').style.display = 'none';
+                            // Reset file text
+                            const fileText = document.getElementById('kycFileText');
+                            if (fileText) {
+                                fileText.innerHTML = `
+                                    <div style="font-size:32px;">🪪</div>
+                                    <p>Drop KYC documents or <span>click to browse</span></p>
+                                    <p style="font-size:12px;color:var(--text3);">National ID, Passport, Utility Bill</p>
+                                `;
+                            }
+                            // Reload section after delay
+                            setTimeout(() => {
+                                document.getElementById('section-kyc').dataset.loaded = 'false';
+                                showSection('kyc');
+                            }, 2000);
+                        } else {
+                            toast(data.data?.error || data.error || 'KYC submission failed', 'error');
+                        }
+                    } catch(err) {
+                        console.error('KYC Error:', err);
+                        toast('Network error. Please try again.', 'error');
+                    } finally {
+                        btn.disabled = false;
+                        btnText.style.display = '';
+                        if (spinner) spinner.style.display = 'none';
+                    }
                 });
-                const data = await res.json();
-                if (data.success) {
-                    toast('KYC submitted! Awaiting verification.', 'success');
-                    this.reset();
-                    document.getElementById('kycDropzone').style.display = 'none';
-                } else {
-                    toast(data.data?.error || 'Submission failed', 'error');
-                }
-            } catch(err) {
-                toast('Network error', 'error');
             }
-        });
-    }
-}
+        }
 
         function renderTransfers(el, transfers) {
             if (!transfers || transfers.length === 0) {
@@ -633,21 +678,21 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                         <div class="form-row">
                             <div class="form-group">
                                 <label>Title *</label>
-                                <input type="text" name="title" required placeholder="e.g. Plot 45A Mfoundi">
+                                <input type="text" name="title" id="regTitle" required placeholder="e.g. Plot 45A Mfoundi">
                             </div>
                             <div class="form-group">
                                 <label>Location *</label>
-                                <input type="text" name="location_address" required placeholder="e.g. Yaoundé, Centre, Cameroon">
+                                <input type="text" name="location_address" id="regLocation" required placeholder="e.g. Yaoundé, Centre, Cameroon">
                             </div>
                         </div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label>Size (m²)</label>
-                                <input type="number" name="size_sqm" placeholder="500">
+                                <input type="number" name="size_sqm" id="regSize" placeholder="500">
                             </div>
                             <div class="form-group">
                                 <label>Property Type</label>
-                                <select name="property_type">
+                                <select name="property_type" id="regType">
                                     <option value="residential">Residential</option>
                                     <option value="commercial">Commercial</option>
                                     <option value="agricultural">Agricultural</option>
@@ -655,55 +700,110 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                                 </select>
                             </div>
                         </div>
-                        <div class="form-group">
-                            <label>Description</label>
-                            <textarea name="description" placeholder="Describe the property..."></textarea>
-                        </div>
-                        <div class="file-upload-area">
-                            <input type="file" name="documents[]" multiple accept=".pdf,.jpg,.jpeg,.png">
-                            <div class="file-upload-text">
-                                <div style="font-size:32px;">📄</div>
-                                <p>Drop documents or <span>click to browse</span></p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>GPS Coordinates</label>
+                                <input type="text" name="gps_coordinates" id="regGPS" placeholder="3.8480, 11.5021">
                             </div>
                         </div>
-                        <button type="submit" class="btn btn-primary btn-full" style="margin-top:16px;">
-                            Submit Registration
-                        </button>
+                        <div class="form-group">
+                            <label>Description</label>
+                            <textarea name="description" id="regDesc" placeholder="Describe the property..."></textarea>
+                        </div>
+                        <div class="file-upload-area" id="regFileArea">
+                            <input type="file" name="documents[]" id="regFileInput" multiple accept=".pdf,.jpg,.jpeg,.png">
+                            <div class="file-upload-text" id="regFileText">
+                                <div style="font-size:32px;">📄</div>
+                                <p>Drop documents or <span>click to browse</span></p>
+                                <p style="font-size:12px;color:var(--text3);">PDF, JPG, PNG — text will be auto-extracted</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Document parsing status -->
+                        <div id="parseStatus" style="display:none; padding:12px; border:1px solid var(--border); border-radius:8px; margin-top:12px; color:var(--text2); font-size:13px;">
+                        </div>
+                        
+                        <div style="display:flex; gap:10px; margin-top:16px;">
+                            <button type="button" class="btn btn-secondary" onclick="parseDocument()" id="parseBtn">
+                                🧾 Auto-read Document
+                            </button>
+                            <button type="submit" class="btn btn-primary" style="flex:1;" id="submitRegBtn">
+                                <span class="btn-text">Submit Registration</span>
+                                <span class="spinner" style="display:none;"></span>
+                            </button>
+                        </div>
                     </form>
                 </div>`;
             
-            // ✅ Re-initialize file upload areas after content loads
-            initFileUploadAreas();
+            // Re-initialize file areas
+            setTimeout(() => initFileUploadAreas(), 100);
             
-            // Initialize form handler
-            document.getElementById('registrationForm').addEventListener('submit', async function(e) {
-                e.preventDefault();
-                const formData = new FormData(this);
-                try {
-                    const res = await fetch('../api/parcels/submit', {
-                        method: 'POST',
-                        body: formData,
-                        credentials: 'same-origin'
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                        toast('Registration submitted!', 'success');
-                        this.reset();
-                        // Reset file upload text
-                        const uploadText = this.querySelector('.file-upload-text');
-                        if (uploadText) {
-                            uploadText.innerHTML = `
-                                <div style="font-size:32px;">📄</div>
-                                <p>Drop documents or <span>click to browse</span></p>
-                            `;
-                        }
-                    } else {
-                        toast(data.data?.error || 'Submission failed', 'error');
+            // Document change handler
+            const fileInput = document.getElementById('regFileInput');
+            if (fileInput) {
+                fileInput.addEventListener('change', function() {
+                    if (this.files.length > 0) {
+                        document.getElementById('parseStatus').style.display = 'block';
+                        document.getElementById('parseStatus').innerHTML = 
+                            '<span style="color:#ffcc00;">📄 ' + this.files.length + ' file(s) selected. Click "Auto-read Document" to extract information.</span>';
                     }
-                } catch(err) {
-                    toast('Network error', 'error');
-                }
-            });
+                });
+            }
+            
+            // Form submit handler
+            const regForm = document.getElementById('registrationForm');
+            if (regForm) {
+                regForm.addEventListener('submit', async function(e) {
+                    e.preventDefault();
+                    
+                    const btn = document.getElementById('submitRegBtn');
+                    const btnText = btn.querySelector('.btn-text');
+                    const spinner = btn.querySelector('.spinner');
+                    
+                    btn.disabled = true;
+                    btnText.style.display = 'none';
+                    if (spinner) spinner.style.display = 'inline-block';
+                    
+                    const formData = new FormData(this);
+                    
+                    try {
+                        toast('Uploading and submitting registration...', 'info');
+                        
+                        const res = await fetch('../api/parcels/submit', {
+                            method: 'POST',
+                            body: formData,
+                            credentials: 'same-origin'
+                        });
+                        
+                        const data = await res.json();
+                        console.log('Registration Response:', data);
+                        
+                        if (data.success) {
+                            toast('Registration submitted! Awaiting admin review.', 'success');
+                            this.reset();
+                            document.getElementById('parseStatus').style.display = 'none';
+                            // Reset file text
+                            const fileText = document.getElementById('regFileText');
+                            if (fileText) {
+                                fileText.innerHTML = `
+                                    <div style="font-size:32px;">📄</div>
+                                    <p>Drop documents or <span>click to browse</span></p>
+                                    <p style="font-size:12px;color:var(--text3);">PDF, JPG, PNG — text will be auto-extracted</p>
+                                `;
+                            }
+                        } else {
+                            toast(data.data?.error || data.error || 'Registration failed', 'error');
+                        }
+                    } catch(err) {
+                        console.error('Registration Error:', err);
+                        toast('Network error. Please try again.', 'error');
+                    } finally {
+                        btn.disabled = false;
+                        btnText.style.display = '';
+                        if (spinner) spinner.style.display = 'none';
+                    }
+                });
+            }
         }
 
         async function loadProfileSection(el) {
@@ -833,6 +933,103 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
             if (input) {
                 input.click();
             }
+        }
+
+        // Document parsing function
+        async function parseDocument() {
+            const fileInput = document.getElementById('regFileInput');
+            const statusDiv = document.getElementById('parseStatus');
+            const parseBtn = document.getElementById('parseBtn');
+            
+            if (!fileInput || fileInput.files.length === 0) {
+                toast('Please select a document first', 'warn');
+                return;
+            }
+            
+            statusDiv.style.display = 'block';
+            statusDiv.innerHTML = '<span style="color:#4d9eff;">🔍 Reading document... This may take a few seconds.</span>';
+            parseBtn.disabled = true;
+            
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            
+            try {
+                const res = await fetch('../api/upload?action=parse', {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'same-origin'
+                });
+                
+                const data = await res.json();
+                console.log('Parse Response:', data);
+                
+                if (data.success && data.data?.parsed_text) {
+                    const parsed = parseDocumentText(data.data.parsed_text);
+                    
+                    // Autofill fields
+                    let filledCount = 0;
+                    
+                    if (parsed.title && !document.getElementById('regTitle').value) {
+                        document.getElementById('regTitle').value = parsed.title;
+                        filledCount++;
+                    }
+                    if (parsed.location && !document.getElementById('regLocation').value) {
+                        document.getElementById('regLocation').value = parsed.location;
+                        filledCount++;
+                    }
+                    if (parsed.size && !document.getElementById('regSize').value) {
+                        document.getElementById('regSize').value = parsed.size;
+                        filledCount++;
+                    }
+                    if (parsed.gps && !document.getElementById('regGPS').value) {
+                        document.getElementById('regGPS').value = parsed.gps;
+                        filledCount++;
+                    }
+                    if (parsed.description && !document.getElementById('regDesc').value) {
+                        document.getElementById('regDesc').value = parsed.description;
+                        filledCount++;
+                    }
+                    
+                    statusDiv.innerHTML = `
+                        <div style="color:#00e5a0;font-weight:600;">✅ Document read successfully!</div>
+                        <div style="margin-top:4px;">${filledCount} field(s) auto-filled from document.</div>
+                        <div style="font-size:11px;color:var(--text3);margin-top:4px;max-height:80px;overflow:auto;">Preview: ${escapeHtml(data.data.parsed_text.substring(0, 200))}...</div>
+                    `;
+                    
+                    if (filledCount > 0) {
+                        toast(`${filledCount} field(s) auto-filled from document`, 'success');
+                    }
+                } else {
+                    statusDiv.innerHTML = `
+                        <div style="color:#ffcc00;">⚠️ Could not extract text from this document.</div>
+                        <div style="font-size:12px;margin-top:4px;">Please fill in the fields manually. The document will still be uploaded.</div>
+                    `;
+                    toast('Could not auto-read document. Fill fields manually.', 'warn');
+                }
+            } catch(err) {
+                console.error('Parse Error:', err);
+                statusDiv.innerHTML = '<div style="color:#ff3b5c;">❌ Document parsing failed. Please fill fields manually.</div>';
+            } finally {
+                parseBtn.disabled = false;
+            }
+        }
+
+        // Parse extracted text into structured data
+        function parseDocumentText(text) {
+            const cleaned = text.replace(/\r/g, '').replace(/\n{2,}/g, '\n').trim();
+            
+            return {
+                title: extractField(cleaned, /(?:title|parcel name|property name)[:\-]?\s*(.+)/i),
+                location: extractField(cleaned, /(?:location|address|site)[:\-]?\s*(.+)/i),
+                size: extractField(cleaned, /(?:size|area|surface)[:\-]?\s*(\d+(?:\.\d+)?)/i),
+                gps: extractField(cleaned, /(?:gps|coordinates|lat[:\-]?\s*[0-9.]+)[,\s]*[0-9.]*/i),
+                description: extractField(cleaned, /(?:description|details|notes)[:\-]?\s*(.+)/i)
+            };
+        }
+
+        function extractField(text, regex) {
+            const match = text.match(regex);
+            return match ? match[1].trim().replace(/[^a-zA-Z0-9\s.,°\-]/g, '') : null;
         }
     </script>
 </body>
