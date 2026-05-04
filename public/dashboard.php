@@ -253,6 +253,51 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
     
     <script src="assets/js/app.js"></script>
     <script>
+        // Toast notification
+        function toast(message, type = 'info') {
+            let container = document.getElementById('toast-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'toast-container';
+                container.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;';
+                document.body.appendChild(container);
+            }
+
+            const icons = { success: '✅', error: '❌', info: 'ℹ️', warn: '⚠️' };
+            const colors = {
+                success: '#00e5a0',
+                error: '#ff3b5c',
+                info: '#4d9eff',
+                warn: '#ffcc00'
+            };
+
+            const toastEl = document.createElement('div');
+            toastEl.style.cssText = `
+                background: var(--surface, #1a1f25);
+                border: 1px solid var(--border, #242c35);
+                border-left: 3px solid ${colors[type] || colors.info};
+                border-radius: 8px;
+                padding: 14px 18px;
+                max-width: 420px;
+                display: flex;
+                align-items: flex-start;
+                gap: 10px;
+                font-size: 13px;
+                color: #e8edf2;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+                cursor: pointer;
+            `;
+            toastEl.innerHTML = `
+                <span style="font-size:16px;">${icons[type] || '🔔'}</span>
+                <span style="flex:1;">${message}</span>
+                <span style="cursor:pointer;color:#4a5a6a;" onclick="this.parentElement.remove()">✕</span>
+            `;
+            toastEl.addEventListener('click', () => toastEl.remove());
+            container.appendChild(toastEl);
+
+            setTimeout(() => toastEl.remove(), 5000);
+        }
+
         // Section navigation
         function showSection(section) {
             document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
@@ -469,11 +514,40 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                                     <p style="font-size:12px;color:var(--text3);">National ID, Passport, Utility Bill</p>
                                 </div>
                             </div>
-                            <button type="submit" class="btn btn-primary btn-full" style="margin-top:16px;">Submit KYC</button>
-                        </form>
-                    </div>
-                </div>`;
-        }
+                    <button type="submit" class="btn btn-primary btn-full" style="margin-top:16px;">Submit KYC</button>
+                </form>
+            </div>
+        </div>`;
+    
+    // ✅ Re-initialize file upload areas
+    initFileUploadAreas();
+    
+    // Initialize KYC form
+    const kycForm = document.getElementById('kycForm');
+    if (kycForm) {
+        kycForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            try {
+                const res = await fetch('../api/kyc/submit', {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'same-origin'
+                });
+                const data = await res.json();
+                if (data.success) {
+                    toast('KYC submitted! Awaiting verification.', 'success');
+                    this.reset();
+                    document.getElementById('kycDropzone').style.display = 'none';
+                } else {
+                    toast(data.data?.error || 'Submission failed', 'error');
+                }
+            } catch(err) {
+                toast('Network error', 'error');
+            }
+        });
+    }
+}
 
         function renderTransfers(el, transfers) {
             if (!transfers || transfers.length === 0) {
@@ -598,6 +672,9 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                     </form>
                 </div>`;
             
+            // ✅ Re-initialize file upload areas after content loads
+            initFileUploadAreas();
+            
             // Initialize form handler
             document.getElementById('registrationForm').addEventListener('submit', async function(e) {
                 e.preventDefault();
@@ -612,6 +689,14 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                     if (data.success) {
                         toast('Registration submitted!', 'success');
                         this.reset();
+                        // Reset file upload text
+                        const uploadText = this.querySelector('.file-upload-text');
+                        if (uploadText) {
+                            uploadText.innerHTML = `
+                                <div style="font-size:32px;">📄</div>
+                                <p>Drop documents or <span>click to browse</span></p>
+                            `;
+                        }
                     } else {
                         toast(data.data?.error || 'Submission failed', 'error');
                     }
@@ -683,6 +768,71 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
 
         function markAllRead() {
             fetch('api/notifications/read-all', { method: 'POST' });
+        }
+
+        // ── File Upload "Click to Browse" Handlers ───────────
+
+        // Make all file-upload-area divs clickable
+        document.addEventListener('DOMContentLoaded', function() {
+            initFileUploadAreas();
+        });
+
+        // Also re-initialize after section content loads
+        function initFileUploadAreas() {
+            document.querySelectorAll('.file-upload-area').forEach(area => {
+                // Remove existing handler to prevent duplicates
+                area.removeEventListener('click', handleFileAreaClick);
+                area.addEventListener('click', handleFileAreaClick);
+                
+                // Find the input inside
+                const input = area.querySelector('input[type="file"]');
+                if (input) {
+                    // Show file name when selected
+                    input.addEventListener('change', function() {
+                        const textDiv = area.querySelector('.file-upload-text');
+                        if (textDiv && this.files.length > 0) {
+                            const fileNames = Array.from(this.files).map(f => f.name).join(', ');
+                            textDiv.innerHTML = `
+                                <div style="font-size:32px;">✅</div>
+                                <p class="file-selected">${fileNames}</p>
+                                <p style="font-size:12px;color:var(--text3);">${this.files.length} file(s) selected</p>
+                            `;
+                        }
+                    });
+                }
+                
+                // Drag and drop
+                area.addEventListener('dragover', function(e) {
+                    e.preventDefault();
+                    area.classList.add('drag-over');
+                });
+                
+                area.addEventListener('dragleave', function() {
+                    area.classList.remove('drag-over');
+                });
+                
+                area.addEventListener('drop', function(e) {
+                    e.preventDefault();
+                    area.classList.remove('drag-over');
+                    if (input && e.dataTransfer.files.length) {
+                        // Assign dropped files to the input
+                        const dt = new DataTransfer();
+                        for (let file of e.dataTransfer.files) {
+                            dt.items.add(file);
+                        }
+                        input.files = dt.files;
+                        input.dispatchEvent(new Event('change'));
+                    }
+                });
+            });
+        }
+
+        function handleFileAreaClick(e) {
+            // Find the hidden file input and trigger it
+            const input = this.querySelector('input[type="file"]');
+            if (input) {
+                input.click();
+            }
         }
     </script>
 </body>
