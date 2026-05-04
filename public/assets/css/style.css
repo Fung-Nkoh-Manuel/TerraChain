@@ -793,6 +793,15 @@ td .hash {
   text-align: center;
 }
 
+.notif-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .notif-panel {
   position: absolute;
   top: calc(100% + 10px);

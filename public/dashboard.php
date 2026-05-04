@@ -861,13 +861,109 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
             return div.innerHTML;
         }
 
-        function toggleNotifications() {
+        async function toggleNotifications() {
             const panel = document.getElementById('notifPanel');
-            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+            const isCurrentlyHidden = panel.style.display === 'none' || !panel.style.display;
+            
+            if (isCurrentlyHidden) {
+                // Refresh notifications before showing
+                await refreshNotifications();
+                panel.style.display = 'block';
+            } else {
+                panel.style.display = 'none';
+            }
         }
 
-        function markAllRead() {
-            fetch('api/notifications/read-all', { method: 'POST' });
+        async function markAllRead() {
+            try {
+                const res = await fetch('../api/notifications/read-all', { 
+                    method: 'POST',
+                    credentials: 'same-origin' 
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    // Hide the badge
+                    const badge = document.querySelector('.notif-badge');
+                    if (badge) {
+                        badge.style.display = 'none';
+                        badge.textContent = '0';
+                    }
+                    
+                    // Remove "unread" class from all notification items
+                    document.querySelectorAll('.notif-item.unread').forEach(item => {
+                        item.classList.remove('unread');
+                    });
+                    
+                    toast('All notifications marked as read', 'success');
+                }
+            } catch(e) {
+                console.error('Mark read error:', e);
+            }
+        }
+
+        async function refreshNotifications() {
+            try {
+                const res = await fetch('../api/notifications/list', {
+                    credentials: 'same-origin'
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    const { notifications, unread_count } = data.data;
+                    
+                    // Update badge
+                    const badge = document.querySelector('.notif-badge');
+                    if (badge) {
+                        if (unread_count > 0) {
+                            badge.textContent = unread_count;
+                            badge.style.display = 'block';
+                        } else {
+                            badge.style.display = 'none';
+                            badge.textContent = '0';
+                        }
+                    }
+                    
+                    // Update notification list
+                    const listEl = document.getElementById('notifList');
+                    if (listEl) {
+                        if (!notifications || notifications.length === 0) {
+                            listEl.innerHTML = '<div class="notif-empty">No notifications</div>';
+                        } else {
+                            listEl.innerHTML = notifications.map(n => `
+                                <div class="notif-item ${n.is_read ? '' : 'unread'}" onclick="markSingleRead(${n.id})">
+                                    <div class="notif-content">
+                                        <strong>${escapeHtml(n.title)}</strong>
+                                        <p>${escapeHtml(n.message)}</p>
+                                        <span class="notif-time">${formatDate(n.created_at)}</span>
+                                    </div>
+                                    ${!n.is_read ? '<span class="notif-dot" style="width:8px;height:8px;background:var(--accent);border-radius:50%;flex-shrink:0;"></span>' : ''}
+                                </div>
+                            `).join('');
+                        }
+                    }
+                }
+            } catch(e) {
+                console.error('Notification refresh error:', e);
+            }
+        }
+
+        async function markSingleRead(notificationId) {
+            try {
+                const res = await fetch('../api/notifications/mark-read-one', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: notificationId }),
+                    credentials: 'same-origin'
+                });
+                
+                if (res.ok) {
+                    // Refresh notifications
+                    await refreshNotifications();
+                }
+            } catch(e) {
+                console.error('Mark single read error:', e);
+            }
         }
 
         // ── File Upload "Click to Browse" Handlers ───────────

@@ -39,7 +39,7 @@ class NotificationService {
     }
     
     public function markAllRead(int $userId): void {
-        $stmt = $this->db->prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ?');
+        $stmt = $this->db->prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0');
         $stmt->execute([$userId]);
     }
 }

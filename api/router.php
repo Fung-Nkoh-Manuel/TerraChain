@@ -30,6 +30,7 @@ require_once __DIR__ . '/../controllers/ParcelController.php';
 require_once __DIR__ . '/../controllers/KYCController.php';
 require_once __DIR__ . '/../controllers/TransferController.php';
 require_once __DIR__ . '/../controllers/DisputeController.php';
+require_once __DIR__ . '/../controllers/NotificationController.php';
 
 // Parse route
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
@@ -75,6 +76,11 @@ $routes = [
     'POST /api/disputes/vote'     => ['DisputeController', 'vote'],
     'POST /api/disputes/resolve'  => ['DisputeController', 'resolve'],
     'GET /api/disputes/all'       => ['DisputeController', 'all'],
+    
+    // Notifications
+    'GET /api/notifications/list' => ['NotificationController', 'list'],
+    'POST /api/notifications/read-all' => ['NotificationController', 'markAllRead'],
+    'POST /api/notifications/mark-read-one' => ['NotificationController', 'markReadOne'],
 ];
 
 $routeKey = $method . ' ' . $uri;
