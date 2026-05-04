@@ -195,10 +195,22 @@ $notifications = $notifService->getUserNotifications($admin['id']);
                                             <td><?php echo htmlspecialchars($reg['title']); ?></td>
                                             <td><?php echo htmlspecialchars($reg['location_address']); ?></td>
                                             <td>
-                                                <?php if (!empty($reg['ipfs_hash'])): ?>
-                                                    <a href="<?php echo PINATA_GATEWAY . $reg['ipfs_hash']; ?>" target="_blank" class="btn btn-sm btn-outline">📎 View</a>
+                                                <?php if (!empty($reg['document_url'])): ?>
+                                                    <a href="<?php echo $reg['document_url']; ?>" target="_blank" class="btn btn-sm btn-outline">
+                                                        📎 View on IPFS
+                                                    </a>
+                                                    <small class="hash">Hash: <?php echo substr($reg['document_hash'], 0, 16); ?>...</small>
+                                                <?php elseif (!empty($reg['document_hash'])): ?>
+                                                    <span class="badge badge-blue">📄 Hashed</span>
+                                                    <small class="hash">SHA-256: <?php echo substr($reg['document_hash'], 0, 16); ?>...</small>
                                                 <?php else: ?>
-                                                    <span class="text-muted">None</span>
+                                                    <span class="text-muted">No documents</span>
+                                                <?php endif; ?>
+                                                
+                                                <?php if (!empty($reg['documents'])): ?>
+                                                    <div style="margin-top:4px;">
+                                                        <small><?php echo count($reg['documents']); ?> file(s) attached</small>
+                                                    </div>
                                                 <?php endif; ?>
                                             </td>
                                             <td><?php echo date('M d, Y', strtotime($reg['submitted_at'])); ?></td>
@@ -224,6 +236,7 @@ $notifications = $notifService->getUserNotifications($admin['id']);
                 <div class="card">
                     <div class="card-header">
                         <h2>Pending KYC Verifications</h2>
+                        <span class="badge badge-yellow"><?php echo count($pendingKYC); ?> pending</span>
                     </div>
                     
                     <?php if (empty($pendingKYC)): ?>
@@ -245,17 +258,31 @@ $notifications = $notifService->getUserNotifications($admin['id']);
                                             <td>
                                                 <div><?php echo htmlspecialchars($kyc['full_name']); ?></div>
                                                 <small><?php echo htmlspecialchars($kyc['email']); ?></small>
+                                                <?php if (!empty($kyc['national_id'])): ?>
+                                                    <small class="hash">ID: <?php echo htmlspecialchars($kyc['national_id']); ?></small>
+                                                <?php endif; ?>
                                             </td>
                                             <td>
                                                 <?php if (!empty($kyc['document_url'])): ?>
-                                                    <a href="<?php echo $kyc['document_url']; ?>" target="_blank" class="btn btn-sm btn-outline">📎 View Docs</a>
+                                                    <a href="<?php echo $kyc['document_url']; ?>" target="_blank" class="btn btn-sm btn-outline">
+                                                        📎 View Documents on IPFS
+                                                    </a>
+                                                    <small class="hash">Hash: <?php echo substr($kyc['document_hash'], 0, 16); ?>...</small>
+                                                <?php elseif (!empty($kyc['document_hash'])): ?>
+                                                    <span class="badge badge-blue">📄 Hashed (local)</span>
+                                                    <small class="hash">SHA-256: <?php echo substr($kyc['document_hash'], 0, 16); ?>...</small>
+                                                <?php else: ?>
+                                                    <span class="text-muted">No documents</span>
                                                 <?php endif; ?>
-                                                <small class="hash">SHA-256: <?php echo substr($kyc['document_hash'], 0, 16); ?>...</small>
                                             </td>
                                             <td><?php echo date('M d, Y', strtotime($kyc['submitted_at'])); ?></td>
                                             <td class="action-buttons">
-                                                <button class="btn btn-sm btn-success" onclick="verifyKYC(<?php echo $kyc['id']; ?>, true)">✓ Verify</button>
-                                                <button class="btn btn-sm btn-danger" onclick="verifyKYC(<?php echo $kyc['id']; ?>, false)">✕ Reject</button>
+                                                <button class="btn btn-sm btn-success" onclick="verifyKYC(<?php echo $kyc['id']; ?>, true)">
+                                                    ✓ Verify
+                                                </button>
+                                                <button class="btn btn-sm btn-danger" onclick="verifyKYC(<?php echo $kyc['id']; ?>, false)">
+                                                    ✕ Reject
+                                                </button>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>

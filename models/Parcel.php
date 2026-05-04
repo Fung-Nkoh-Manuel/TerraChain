@@ -10,7 +10,13 @@ class Parcel {
     
     public function create(array $data): int {
         $parcelNumber = $this->generateParcelNumber();
-        $stmt = $this->db->prepare('INSERT INTO parcels (parcel_number, title, location_address, size_sqm, property_type, description, gps_lat, gps_lng, coordinates_json, status, owner_id, document_hash, ipfs_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $stmt = $this->db->prepare('
+            INSERT INTO parcels 
+            (parcel_number, title, location_address, size_sqm, property_type, 
+             description, gps_lat, gps_lng, coordinates_json, status, 
+             owner_id, document_hash, ipfs_hash) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ');
         $stmt->execute([
             $parcelNumber,
             $data['title'],
@@ -24,19 +30,29 @@ class Parcel {
             'pending',
             $data['owner_id'],
             $data['document_hash'] ?? null,
-            $data['ipfs_hash'] ?? null
+            $data['ipfs_hash'] ?? ''
         ]);
         return (int)$this->db->lastInsertId();
     }
     
     public function findById(int $id): ?array {
-        $stmt = $this->db->prepare('SELECT p.*, u.full_name as owner_name, u.email as owner_email FROM parcels p LEFT JOIN users u ON p.owner_id = u.id WHERE p.id = ?');
+        $stmt = $this->db->prepare('
+            SELECT p.*, u.full_name as owner_name, u.email as owner_email 
+            FROM parcels p 
+            LEFT JOIN users u ON p.owner_id = u.id 
+            WHERE p.id = ?
+        ');
         $stmt->execute([$id]);
         return $stmt->fetch() ?: null;
     }
     
     public function findByNumber(string $parcelNumber): ?array {
-        $stmt = $this->db->prepare('SELECT p.*, u.full_name as owner_name FROM parcels p LEFT JOIN users u ON p.owner_id = u.id WHERE p.parcel_number = ?');
+        $stmt = $this->db->prepare('
+            SELECT p.*, u.full_name as owner_name 
+            FROM parcels p 
+            LEFT JOIN users u ON p.owner_id = u.id 
+            WHERE p.parcel_number = ?
+        ');
         $stmt->execute([$parcelNumber]);
         return $stmt->fetch() ?: null;
     }
@@ -48,12 +64,26 @@ class Parcel {
     }
     
     public function getAllActive(): array {
-        $stmt = $this->db->query('SELECT p.*, u.full_name as owner_name FROM parcels p LEFT JOIN users u ON p.owner_id = u.id WHERE p.status IN ("owned", "transferred") ORDER BY p.created_at DESC LIMIT 100');
+        $stmt = $this->db->query('
+            SELECT p.*, u.full_name as owner_name 
+            FROM parcels p 
+            LEFT JOIN users u ON p.owner_id = u.id 
+            WHERE p.status NOT IN ("rejected") 
+            ORDER BY p.created_at DESC 
+            LIMIT 100
+        ');
         return $stmt->fetchAll();
     }
     
     public function search(string $query): array {
-        $stmt = $this->db->prepare('SELECT p.*, u.full_name as owner_name FROM parcels p LEFT JOIN users u ON p.owner_id = u.id WHERE (p.title LIKE ? OR p.location_address LIKE ? OR p.parcel_number LIKE ?) AND p.status NOT IN ("rejected") ORDER BY p.created_at DESC');
+        $stmt = $this->db->prepare('
+            SELECT p.*, u.full_name as owner_name 
+            FROM parcels p 
+            LEFT JOIN users u ON p.owner_id = u.id 
+            WHERE (p.title LIKE ? OR p.location_address LIKE ? OR p.parcel_number LIKE ?) 
+            AND p.status NOT IN ("rejected") 
+            ORDER BY p.created_at DESC
+        ');
         $like = "%{$query}%";
         $stmt->execute([$like, $like, $like]);
         return $stmt->fetchAll();
@@ -74,10 +104,55 @@ class Parcel {
         $stmt->execute([$docHash, $ipfsHash, $id]);
     }
     
+    /**
+     * Get pending registrations with document info
+     */
     public function getPendingRegistrations(): array {
-        $stmt = $this->db->prepare('SELECT r.*, p.title, p.location_address, p.parcel_number, p.document_hash, p.ipfs_hash, u.full_name as applicant_name, u.email as applicant_email FROM pending_registrations r JOIN parcels p ON r.parcel_id = p.id JOIN users u ON r.applicant_id = u.id WHERE r.status IN ("submitted", "under_review") ORDER BY r.submitted_at DESC');
+        $stmt = $this->db->prepare('
+            SELECT 
+                r.id,
+                r.applicant_id,
+                r.parcel_id,
+                r.status,
+                r.admin_notes,
+                r.submitted_at,
+                p.title,
+                p.location_address,
+                p.size_sqm,
+                p.property_type,
+                p.parcel_number,
+                p.document_hash,
+                p.ipfs_hash,
+                p.coordinates_json,
+                p.description,
+                u.full_name AS applicant_name,
+                u.email AS applicant_email
+            FROM pending_registrations r 
+            JOIN parcels p ON r.parcel_id = p.id 
+            JOIN users u ON r.applicant_id = u.id 
+            WHERE r.status IN ("submitted", "under_review") 
+            ORDER BY r.submitted_at DESC
+        ');
         $stmt->execute();
-        return $stmt->fetchAll();
+        $results = $stmt->fetchAll();
+        
+        // Add document URLs
+        foreach ($results as &$row) {
+            if (!empty($row['ipfs_hash'])) {
+                $row['document_url'] = PINATA_GATEWAY . $row['ipfs_hash'];
+                $row['has_documents'] = true;
+            } else {
+                $row['document_url'] = null;
+                $row['has_documents'] = !empty($row['document_hash']);
+            }
+            
+            // Also get individual documents
+            $docs = $this->db->prepare('SELECT * FROM parcel_documents WHERE parcel_id = ?');
+            $docs->execute([$row['parcel_id']]);
+            $row['documents'] = $docs->fetchAll();
+        }
+        
+        return $results;
     }
     
     public function approveRegistration(int $regId, int $reviewerId, ?string $txHash = null): void {
@@ -87,8 +162,10 @@ class Parcel {
             $stmt->execute([$regId]);
             $reg = $stmt->fetch();
             
-            $this->db->prepare('UPDATE pending_registrations SET status = "approved", reviewed_by = ?, reviewed_at = NOW() WHERE id = ?')->execute([$reviewerId, $regId]);
-            $this->db->prepare('UPDATE parcels SET status = "owned", blockchain_tx_hash = COALESCE(?, blockchain_tx_hash), updated_at = NOW() WHERE id = ?')->execute([$txHash, $reg['parcel_id']]);
+            $this->db->prepare('UPDATE pending_registrations SET status = "approved", reviewed_by = ?, reviewed_at = NOW() WHERE id = ?')
+                ->execute([$reviewerId, $regId]);
+            $this->db->prepare('UPDATE parcels SET status = "owned", blockchain_tx_hash = COALESCE(?, blockchain_tx_hash), updated_at = NOW() WHERE id = ?')
+                ->execute([$txHash, $reg['parcel_id']]);
             
             $this->db->commit();
         } catch (Exception $e) {
@@ -104,8 +181,10 @@ class Parcel {
             $stmt->execute([$regId]);
             $reg = $stmt->fetch();
             
-            $this->db->prepare('UPDATE pending_registrations SET status = "rejected", admin_notes = ?, reviewed_by = ?, reviewed_at = NOW() WHERE id = ?')->execute([$reason, $reviewerId, $regId]);
-            $this->db->prepare('UPDATE parcels SET status = "rejected" WHERE id = ?')->execute([$reg['parcel_id']]);
+            $this->db->prepare('UPDATE pending_registrations SET status = "rejected", admin_notes = ?, reviewed_by = ?, reviewed_at = NOW() WHERE id = ?')
+                ->execute([$reason, $reviewerId, $regId]);
+            $this->db->prepare('UPDATE parcels SET status = "rejected" WHERE id = ?')
+                ->execute([$reg['parcel_id']]);
             
             $this->db->commit();
         } catch (Exception $e) {

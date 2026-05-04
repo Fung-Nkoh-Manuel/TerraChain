@@ -8,13 +8,14 @@ class KYC {
         $this->db = Database::getConnection();
     }
     
-    public function submit(int $userId, string $documentHash, string $ipfsHash, ?string $blockchainTxHash = null): int {
-        // Check existing
+    public function submit(int $userId, string $documentHash, ?string $ipfsHash = null): int {
+        $ipfsHash = $ipfsHash ?? '';
+        
         $existing = $this->getUserKYC($userId);
         
         if ($existing) {
-            $stmt = $this->db->prepare('UPDATE kyc_records SET document_hash = ?, ipfs_hash = ?, status = "pending", submitted_at = NOW(), blockchain_tx_hash = COALESCE(?, blockchain_tx_hash) WHERE user_id = ?');
-            $stmt->execute([$documentHash, $ipfsHash, $blockchainTxHash, $userId]);
+            $stmt = $this->db->prepare('UPDATE kyc_records SET document_hash = ?, ipfs_hash = ?, status = "pending", submitted_at = NOW() WHERE user_id = ?');
+            $stmt->execute([$documentHash, $ipfsHash, $userId]);
             return $existing['id'];
         }
         
@@ -37,7 +38,18 @@ class KYC {
             WHERE k.status = "pending" 
             ORDER BY k.submitted_at ASC
         ');
-        return $stmt->fetchAll();
+        $results = $stmt->fetchAll();
+        
+        // Add IPFS URLs for each record
+        foreach ($results as &$row) {
+            if (!empty($row['ipfs_hash'])) {
+                $row['document_url'] = PINATA_GATEWAY . $row['ipfs_hash'];
+            } else {
+                $row['document_url'] = null;
+            }
+        }
+        
+        return $results;
     }
     
     public function verify(int $kycId, int $reviewerId, bool $approved, ?string $reason = null): void {

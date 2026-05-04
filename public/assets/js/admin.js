@@ -148,75 +148,113 @@ async function approveRegistration(regId) {
 }
 
 async function rejectRegistration(regId) {
-  const reason = prompt("Rejection reason:");
-  if (!reason) return;
-
-  toast("Rejecting registration...", "info");
-
-  try {
-    const res = await api("/parcels/reject", "POST", {
-      registration_id: regId,
-      reason: reason,
-    });
-
-    if (res.success) {
-      toast("Registration rejected", "warn");
-      setTimeout(() => location.reload(), 1500);
-    } else {
-      toast(res.data?.error || res.error || "Rejection failed", "error");
+    // Ask for reason ONCE
+    const reason = prompt('Please enter the rejection reason:');
+    
+    // If user cancels or leaves empty, do nothing
+    if (reason === null || reason.trim() === '') {
+        toast('Rejection cancelled - no reason provided', 'warn');
+        return;
     }
-  } catch (err) {
-    toast("Error: " + err.message, "error");
-  }
+    
+    toast('Rejecting registration...', 'info');
+    
+    try {
+        const res = await fetch(API_BASE + '/parcels/reject', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                registration_id: regId,
+                reason: reason.trim()
+            }),
+            credentials: 'same-origin'
+        });
+        
+        const data = await res.json();
+        
+        if (data.success) {
+            toast('Registration rejected', 'warn');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            toast(data.data?.error || 'Rejection failed', 'error');
+        }
+    } catch (err) {
+        console.error('Reject error:', err);
+        toast('Network error', 'error');
+    }
 }
 
 // ── KYC Actions ──────────────────────────────────────
 async function verifyKYC(kycId, approved) {
-  if (approved) {
-    if (!confirm("Verify this KYC submission?")) return;
-  } else {
-    const reason = prompt("Rejection reason:");
-    if (!reason) return;
-  }
-
-  toast(approved ? "Verifying KYC..." : "Rejecting KYC...", "info");
-
-  try {
-    const res = await api("/kyc/verify", "POST", {
-      kyc_id: kycId,
-      approved: approved,
-      reason: approved
-        ? ""
-        : prompt("Rejection reason:") || "Documents insufficient",
-    });
-
-    // Ask for reason again if rejecting
-    if (!approved) {
-      const reason = prompt("Rejection reason:");
-      if (!reason) return;
-
-      const res2 = await api("/kyc/verify", "POST", {
-        kyc_id: kycId,
-        approved: false,
-        reason: reason,
-      });
-
-      if (res2.success) {
-        toast("KYC rejected", "warn");
-        setTimeout(() => location.reload(), 1500);
-      }
-      return;
-    }
-
-    if (res.success) {
-      toast("KYC verified!", "success");
-      setTimeout(() => location.reload(), 1500);
+    if (approved) {
+        // Approve - just confirm
+        if (!confirm('Approve this KYC verification?')) {
+            return;
+        }
+        
+        toast('Verifying KYC...', 'info');
+        
+        try {
+            const res = await fetch(API_BASE + '/kyc/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    kyc_id: kycId,
+                    approved: true
+                }),
+                credentials: 'same-origin'
+            });
+            
+            const data = await res.json();
+            
+            if (data.success) {
+                toast('KYC verified successfully!', 'success');
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                toast(data.data?.error || 'Verification failed', 'error');
+            }
+        } catch (err) {
+            console.error('KYC verify error:', err);
+            toast('Network error', 'error');
+        }
+        
     } else {
-      toast(res.data?.error || res.error || "Verification failed", "error");
+        // Reject - ask for reason ONCE
+        const reason = prompt('Please enter the rejection reason:');
+        
+        // If user cancels the prompt, do nothing
+        if (reason === null || reason.trim() === '') {
+            toast('Rejection cancelled - no reason provided', 'warn');
+            return;
+        }
+        
+        toast('Rejecting KYC...', 'info');
+        
+        try {
+            const res = await fetch(API_BASE + '/kyc/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    kyc_id: kycId,
+                    approved: false,
+                    reason: reason.trim()
+                }),
+                credentials: 'same-origin'
+            });
+            
+            const data = await res.json();
+            
+            if (data.success) {
+                toast('KYC rejected', 'warn');
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                toast(data.data?.error || 'Rejection failed', 'error');
+            }
+        } catch (err) {
+            console.error('KYC reject error:', err);
+            toast('Network error', 'error');
+        }
     }
-  } catch (err) {
-    toast("Error: " + err.message, "error");
-  }
 }
 
 // ── Transfer Actions ─────────────────────────────────
@@ -250,26 +288,39 @@ async function approveTransfer(transferId) {
 }
 
 async function rejectTransfer(transferId) {
-  const reason = prompt("Rejection reason:");
-  if (!reason) return;
-
-  toast("Rejecting transfer...", "info");
-
-  try {
-    const res = await api("/transfers/reject", "POST", {
-      transfer_id: transferId,
-      reason: reason,
-    });
-
-    if (res.success) {
-      toast("Transfer rejected", "warn");
-      setTimeout(() => location.reload(), 1500);
-    } else {
-      toast(res.data?.error || res.error || "Rejection failed", "error");
+    // Ask for reason ONCE
+    const reason = prompt('Please enter the rejection reason:');
+    
+    if (reason === null || reason.trim() === '') {
+        toast('Rejection cancelled - no reason provided', 'warn');
+        return;
     }
-  } catch (err) {
-    toast("Error: " + err.message, "error");
-  }
+    
+    toast('Rejecting transfer...', 'info');
+    
+    try {
+        const res = await fetch(API_BASE + '/transfers/reject', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                transfer_id: transferId,
+                reason: reason.trim()
+            }),
+            credentials: 'same-origin'
+        });
+        
+        const data = await res.json();
+        
+        if (data.success) {
+            toast('Transfer rejected', 'warn');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            toast(data.data?.error || 'Rejection failed', 'error');
+        }
+    } catch (err) {
+        console.error('Reject error:', err);
+        toast('Network error', 'error');
+    }
 }
 
 // ── Dispute Actions ──────────────────────────────────
