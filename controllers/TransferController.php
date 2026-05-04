@@ -69,7 +69,7 @@ class TransferController {
     }
     
     /**
-     * POST /api/transfers/approve (Admin only)
+     * POST /api/transfers/approve (Admin only - triggers blockchain)
      */
     public function approve(): void {
         $admin = $this->auth->requireAdmin();
@@ -77,37 +77,31 @@ class TransferController {
         
         if (empty($data['transfer_id'])) {
             $this->respond(false, 'Transfer ID required', 400);
+            return;
         }
         
         $transfer = $this->transferModel->findById($data['transfer_id']);
         if (!$transfer) {
             $this->respond(false, 'Transfer not found', 404);
+            return;
         }
         
-        // ─── BLOCKCHAIN INTERACTION ───
+        // Blockchain interaction
         $txHash = null;
-        
         if ($this->blockchain->isEnabled()) {
             $parcel = $this->parcelModel->findById($transfer['parcel_id']);
             
             if ($parcel && $parcel['document_hash']) {
-                
-                // STEP 1: Check sender's wallet
                 $fromWallet = $this->userModel->getWalletAddress($transfer['sender_id']);
                 if (!$fromWallet) {
-                    // Sender should already have a wallet from registration
-                    // If not, generate one (edge case)
                     $fromWallet = $this->generateWalletForUser($transfer['sender_id']);
                 }
                 
-                // STEP 2: Check recipient's wallet  
                 $toWallet = $this->userModel->getWalletAddress($transfer['recipient_id']);
                 if (!$toWallet) {
-                    // Generate wallet for recipient
                     $toWallet = $this->generateWalletForUser($transfer['recipient_id']);
                 }
                 
-                // STEP 3: Call smart contract
                 $result = $this->blockchain->recordTransfer(
                     $parcel['document_hash'],
                     $fromWallet,
@@ -120,26 +114,25 @@ class TransferController {
             }
         }
         
-        // Approve transfer in MySQL
+        // Approve transfer
         $this->transferModel->approve($data['transfer_id'], $admin['id'], $txHash);
         
-        // Notify both parties
-        $parcelTitle = $transfer['parcel_title'] ?? 'Land Parcel';
-        
+        // ✅ NOTIFY THE SELLER (previous owner)
         $this->notifications->send(
             $transfer['sender_id'],
             'transfer_approved',
-            'Transfer Approved ✓',
-            "Transfer of \"{$parcelTitle}\" has been approved.",
+            '✅ Transfer Completed',
+            "Your transfer of \"{$transfer['parcel_title']}\" ({$transfer['parcel_number']}) has been approved. The property has been transferred to {$transfer['recipient_name']}.",
             $transfer['id'],
             'transfer'
         );
         
+        // ✅ NOTIFY THE BUYER (new owner)
         $this->notifications->send(
             $transfer['recipient_id'],
-            'transfer_completed',
-            'You Are Now the Owner',
-            "Ownership of \"{$parcelTitle}\" has been transferred to you.",
+            'transfer_received',
+            '🎉 You Are Now the Owner!',
+            "Congratulations! Ownership of \"{$transfer['parcel_title']}\" ({$transfer['parcel_number']}) has been transferred to you.",
             $transfer['id'],
             'transfer'
         );
@@ -151,7 +144,7 @@ class TransferController {
     }
     
     /**
-     * POST /api/transfers/reject (Admin only)
+     * POST /api/transfers/reject (Admin)
      */
     public function reject(): void {
         $admin = $this->auth->requireAdmin();
@@ -159,21 +152,37 @@ class TransferController {
         
         if (empty($data['transfer_id']) || empty($data['reason'])) {
             $this->respond(false, 'Transfer ID and reason required', 400);
+            return;
         }
-        
-        $this->transferModel->reject($data['transfer_id'], $admin['id'], $data['reason']);
         
         $transfer = $this->transferModel->findById($data['transfer_id']);
-        if ($transfer) {
-            $this->notifications->send(
-                $transfer['sender_id'],
-                'transfer_rejected',
-                'Transfer Rejected',
-                "Your transfer request was rejected. Reason: {$data['reason']}",
-                $data['transfer_id'],
-                'transfer'
-            );
+        if (!$transfer) {
+            $this->respond(false, 'Transfer not found', 404);
+            return;
         }
+        
+        // Reject transfer
+        $this->transferModel->reject($data['transfer_id'], $admin['id'], $data['reason']);
+        
+        // ✅ NOTIFY THE SELLER
+        $this->notifications->send(
+            $transfer['sender_id'],
+            'transfer_rejected',
+            '❌ Transfer Rejected',
+            "Your transfer of \"{$transfer['parcel_title']}\" ({$transfer['parcel_number']}) was rejected by admin. Reason: {$data['reason']}",
+            $transfer['id'],
+            'transfer'
+        );
+        
+        // ✅ NOTIFY THE BUYER
+        $this->notifications->send(
+            $transfer['recipient_id'],
+            'transfer_rejected_buyer',
+            '❌ Transfer Rejected',
+            "The transfer of \"{$transfer['parcel_title']}\" ({$transfer['parcel_number']}) to you was rejected. Reason: {$data['reason']}",
+            $transfer['id'],
+            'transfer'
+        );
         
         $this->respond(true, ['message' => 'Transfer rejected']);
     }

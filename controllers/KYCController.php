@@ -131,8 +131,8 @@ class KYCController {
                 $this->notifications->send(
                     $kyc['user_id'],
                     'kyc_verified',
-                    'KYC Verified ✓',
-                    'Your identity verification has been approved. You can now register land parcels.',
+                    '✅ KYC Verified',
+                    'Your identity has been verified. You can now register land parcels.',
                     $kyc['id'],
                     'kyc'
                 );
@@ -140,8 +140,8 @@ class KYCController {
                 $this->notifications->send(
                     $kyc['user_id'],
                     'kyc_rejected',
-                    'KYC Rejected',
-                    "Your KYC submission was rejected. Reason: {$reason}. Please resubmit with correct documents.",
+                    '❌ KYC Rejected',
+                    "Your KYC was rejected. Reason: {$reason}. Please resubmit with correct documents.",
                     $kyc['id'],
                     'kyc'
                 );

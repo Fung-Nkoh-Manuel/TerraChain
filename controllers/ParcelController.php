@@ -194,12 +194,13 @@ class ParcelController {
         
         if (empty($data['registration_id'])) {
             $this->respond(false, 'Registration ID required', 400);
+            return;
         }
         
         // Get registration details
         $db = Database::getConnection();
         $stmt = $db->prepare('
-            SELECT r.*, p.document_hash, p.owner_id, p.title 
+            SELECT r.*, p.document_hash, p.owner_id, p.title, p.id as parcel_id, p.parcel_number
             FROM pending_registrations r 
             JOIN parcels p ON r.parcel_id = p.id 
             WHERE r.id = ?
@@ -209,6 +210,7 @@ class ParcelController {
         
         if (!$reg) {
             $this->respond(false, 'Registration not found', 404);
+            return;
         }
         
         // ─── BLOCKCHAIN INTERACTION (admin-only) ───
@@ -245,18 +247,27 @@ class ParcelController {
             $txHash
         );
         
-        // Notify applicant
+        // ✅ NOTIFY THE APPLICANT
         $this->notifications->send(
             $reg['applicant_id'],
             'registration_approved',
-            'Registration Approved ✓',
-            "Your land parcel \"{$reg['title']}\" has been approved and recorded.",
+            '✅ Registration Approved',
+            "Your land parcel \"{$reg['title']}\" ({$reg['parcel_number']}) has been approved and recorded.",
+            $reg['parcel_id'],
+            'parcel'
+        );
+        
+        // ✅ NOTIFY OTHER ADMINS
+        $this->notifications->sendToAdmins(
+            'registration_approved_admin',
+            'Registration Approved',
+            "Parcel \"{$reg['title']}\" approved by {$admin['full_name']}.",
             $reg['parcel_id'],
             'parcel'
         );
         
         $this->respond(true, [
-            'message' => 'Registration approved',
+            'message' => 'Registration approved successfully',
             'blockchain_tx' => $txHash,
             'wallet_generated' => !empty($ownerWallet)
         ]);
@@ -295,9 +306,41 @@ class ParcelController {
         
         if (empty($data['registration_id']) || empty($data['reason'])) {
             $this->respond(false, 'Registration ID and reason required', 400);
+            return;
         }
         
-        $this->parcelModel->rejectRegistration($data['registration_id'], $reviewer['id'], $data['reason']);
+        // Get registration details BEFORE rejecting
+        $db = Database::getConnection();
+        $stmt = $db->prepare('
+            SELECT r.*, p.title, p.parcel_number, p.id as parcel_id
+            FROM pending_registrations r 
+            JOIN parcels p ON r.parcel_id = p.id 
+            WHERE r.id = ?
+        ');
+        $stmt->execute([$data['registration_id']]);
+        $reg = $stmt->fetch();
+        
+        if (!$reg) {
+            $this->respond(false, 'Registration not found', 404);
+            return;
+        }
+        
+        // Reject in database
+        $this->parcelModel->rejectRegistration(
+            $data['registration_id'], 
+            $reviewer['id'], 
+            $data['reason']
+        );
+        
+        // ✅ NOTIFY THE APPLICANT
+        $this->notifications->send(
+            $reg['applicant_id'],
+            'registration_rejected',
+            '❌ Registration Rejected',
+            "Your land registration for \"{$reg['title']}\" ({$reg['parcel_number']}) was rejected. Reason: {$data['reason']}",
+            $reg['parcel_id'],
+            'parcel'
+        );
         
         $this->respond(true, ['message' => 'Registration rejected']);
     }
