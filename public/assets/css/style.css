@@ -1750,3 +1750,30 @@ footer {
 .back-link:hover {
     color: var(--accent);
 }
+
+/* Read-only fields visual indicator */
+input[readonly],
+textarea[readonly],
+select[disabled] {
+    background-color: var(--bg2) !important;
+    cursor: not-allowed !important;
+    opacity: 0.85;
+    border-color: var(--border) !important;
+}
+
+input[readonly]:focus,
+textarea[readonly]:focus,
+select[disabled]:focus {
+    border-color: var(--border) !important;
+    box-shadow: none !important;
+}
+
+.field-lock-icon {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 12px;
+    pointer-events: none;
+    opacity: 0.6;
+}

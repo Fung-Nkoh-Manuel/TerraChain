@@ -719,13 +719,15 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                             </div>
                         </div>
                         
-                        <!-- Document parsing status -->
                         <div id="parseStatus" style="display:none; padding:12px; border:1px solid var(--border); border-radius:8px; margin-top:12px; color:var(--text2); font-size:13px;">
                         </div>
                         
                         <div style="display:flex; gap:10px; margin-top:16px;">
                             <button type="button" class="btn btn-secondary" onclick="parseDocument()" id="parseBtn">
                                 🧾 Auto-read Document
+                            </button>
+                            <button type="button" class="btn btn-outline" id="resetFormBtn" onclick="resetRegistrationForm()" style="display:none;">
+                                🔄 Reset Form
                             </button>
                             <button type="submit" class="btn btn-primary" style="flex:1;" id="submitRegBtn">
                                 <span class="btn-text">Submit Registration</span>
@@ -751,6 +753,7 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
             }
             
             // Form submit handler
+            // Form submit handler
             const regForm = document.getElementById('registrationForm');
             if (regForm) {
                 regForm.addEventListener('submit', async function(e) {
@@ -766,13 +769,20 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                     
                     const formData = new FormData(this);
                     
+                    // ✅ Debug: Log what's being sent
+                    console.log('Submitting registration with:');
+                    for (let [key, value] of formData.entries()) {
+                        console.log(`  ${key}:`, value instanceof File ? `File: ${value.name}` : value);
+                    }
+                    
                     try {
-                        toast('Uploading and submitting registration...', 'info');
+                        toast('Submitting registration...', 'info');
                         
                         const res = await fetch('../api/parcels/submit', {
                             method: 'POST',
                             body: formData,
                             credentials: 'same-origin'
+                            // ✅ DON'T set Content-Type header! Browser sets it automatically with boundary for FormData
                         });
                         
                         const data = await res.json();
@@ -792,7 +802,8 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                                 `;
                             }
                         } else {
-                            toast(data.data?.error || data.error || 'Registration failed', 'error');
+                            const errorMsg = data.data?.error || data.error || 'Registration failed';
+                            toast(errorMsg, 'error');
                         }
                     } catch(err) {
                         console.error('Registration Error:', err);
@@ -1066,50 +1077,89 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                     
                     let filledCount = 0;
                     
+                    // ✅ TITLE - stays editable (user can modify)
                     if (parsed.title && !document.getElementById('regTitle').value) {
                         document.getElementById('regTitle').value = parsed.title;
+                        document.getElementById('regTitle').style.backgroundColor = '';
+                        document.getElementById('regTitle').readOnly = false;  // EDITABLE
+                        document.getElementById('regTitle').title = 'You can edit this field';
                         filledCount++;
                     }
+                    
+                    // ✅ LOCATION - becomes READ-ONLY
                     if (parsed.location && !document.getElementById('regLocation').value) {
                         document.getElementById('regLocation').value = parsed.location;
+                        setFieldReadOnly('regLocation', '📍 Location (auto-filled from document)');
                         filledCount++;
                     }
+                    
+                    // ✅ SIZE - becomes READ-ONLY
                     if (parsed.size && !document.getElementById('regSize').value) {
-                        document.getElementById('regSize').value = parsed.size.replace(/[^0-9.]/g, '');
+                        const sizeValue = parsed.size.replace(/[^0-9.]/g, '');
+                        document.getElementById('regSize').value = sizeValue;
+                        setFieldReadOnly('regSize', '📏 Size (auto-filled from document)');
                         filledCount++;
                     }
+                    
+                    // ✅ GPS - becomes READ-ONLY
                     if (parsed.gps && !document.getElementById('regGPS').value) {
-                        let gps = parsed.gps.replace(/[°]/g, '').replace(/[NSEW]/gi, '').replace(/\s+/g, ' ').trim();
+                        let gps = parsed.gps
+                            .replace(/[°]/g, '')
+                            .replace(/[NSEW]/gi, '')
+                            .replace(/\s+/g, ' ')
+                            .trim();
                         document.getElementById('regGPS').value = gps;
+                        setFieldReadOnly('regGPS', '📍 GPS (auto-filled from document)');
                         filledCount++;
                     }
+                    
+                    // ✅ DESCRIPTION - becomes READ-ONLY
                     if (parsed.description && !document.getElementById('regDesc').value) {
                         document.getElementById('regDesc').value = parsed.description;
+                        setFieldReadOnly('regDesc', '📝 Description (auto-filled from document)');
                         filledCount++;
                     }
+                    
+                    // ✅ PROPERTY TYPE - becomes READ-ONLY (disabled)
                     if (parsed.property_type && !document.getElementById('regType').value) {
                         const typeSelect = document.getElementById('regType');
                         const typeNormalized = parsed.property_type.toLowerCase();
+                        
                         if (typeNormalized.includes('residential')) typeSelect.value = 'residential';
                         else if (typeNormalized.includes('commercial')) typeSelect.value = 'commercial';
                         else if (typeNormalized.includes('agricultural')) typeSelect.value = 'agricultural';
                         else if (typeNormalized.includes('industrial')) typeSelect.value = 'industrial';
-                        if (typeSelect.value) filledCount++;
+                        
+                        if (typeSelect.value) {
+                            setFieldReadOnly('regType', '🏠 Property Type (auto-filled from document)');
+                            filledCount++;
+                        }
                     }
+                    
+                    // Show reset button
+                    const resetBtn = document.getElementById('resetFormBtn');
+                    if (resetBtn) resetBtn.style.display = 'inline-block';
                     
                     statusDiv.innerHTML = `
                         <div style="color:#00e5a0;font-weight:600;">✅ Document read successfully!</div>
                         <div style="margin-top:4px;">${filledCount} field(s) auto-filled from document.</div>
+                        <div style="font-size:11px;color:var(--text2);margin-top:4px;">
+                            🔒 Auto-filled fields are locked to match the document. 
+                            Only the <strong>Title</strong> can be edited.
+                            <a href="#" onclick="resetRegistrationForm()" style="color:var(--accent);">Reset all fields</a>
+                        </div>
                         <div style="font-size:11px;color:var(--text3);margin-top:4px;max-height:60px;overflow:auto;">
                             Preview: ${escapeHtml(text.substring(0, 150))}...
                         </div>
                     `;
                     
-                    if (filledCount > 0) toast(`${filledCount} field(s) auto-filled`, 'success');
+                    if (filledCount > 0) {
+                        toast(`${filledCount} field(s) auto-filled. Only Title is editable.`, 'success');
+                    }
                 } else if (data.success && !data.data?.parsed_text) {
                     statusDiv.innerHTML = `
                         <div style="color:#ffcc00;">⚠️ Could not extract text from this document.</div>
-                        <div style="font-size:12px;margin-top:4px;">Please fill in the fields manually.</div>
+                        <div style="font-size:12px;margin-top:4px;">Please fill in the fields manually. The document will still be uploaded.</div>
                     `;
                 } else {
                     statusDiv.innerHTML = `<div style="color:#ff3b5c;">❌ ${data.data?.error || 'Parsing failed'}</div>`;
@@ -1120,6 +1170,96 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
             } finally {
                 parseBtn.disabled = false;
             }
+        }
+
+        // ── Helper: Set a field as read-only with visual indicator ──
+        function setFieldReadOnly(fieldId, tooltip) {
+            const field = document.getElementById(fieldId);
+            if (!field) return;
+            
+            if (field.tagName === 'SELECT') {
+                // For select elements
+                field.disabled = true;
+                field.style.backgroundColor = 'var(--bg2)';
+                field.style.cursor = 'not-allowed';
+                field.style.opacity = '0.8';
+            } else {
+                // For input and textarea
+                field.readOnly = true;
+                field.style.backgroundColor = 'var(--bg2)';
+                field.style.cursor = 'not-allowed';
+                field.style.opacity = '0.85';
+            }
+            
+            field.title = tooltip;
+            
+            // Add a small lock icon indicator
+            const lockIcon = document.createElement('span');
+            lockIcon.className = 'field-lock-icon';
+            lockIcon.innerHTML = '🔒';
+            lockIcon.style.cssText = 'position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:12px;pointer-events:none;';
+            lockIcon.title = tooltip;
+            
+            // Wrap in relative container if needed
+            if (field.parentElement.style.position !== 'relative') {
+                field.parentElement.style.position = 'relative';
+            }
+            field.parentElement.appendChild(lockIcon);
+        }
+
+        // ── Reset form: unlock all fields and clear values ──
+        function resetRegistrationForm() {
+            const fields = ['regTitle', 'regLocation', 'regSize', 'regGPS', 'regDesc', 'regType'];
+            
+            fields.forEach(id => {
+                const field = document.getElementById(id);
+                if (!field) return;
+                
+                // Clear value
+                field.value = '';
+                
+                // Unlock field
+                if (field.tagName === 'SELECT') {
+                    field.disabled = false;
+                    field.style.backgroundColor = '';
+                    field.style.cursor = '';
+                    field.style.opacity = '';
+                } else {
+                    field.readOnly = false;
+                    field.style.backgroundColor = '';
+                    field.style.cursor = '';
+                    field.style.opacity = '';
+                }
+                field.title = '';
+                
+                // Remove lock icon
+                const lockIcon = field.parentElement.querySelector('.field-lock-icon');
+                if (lockIcon) lockIcon.remove();
+            });
+            
+            // Reset file input
+            const fileInput = document.getElementById('regFileInput');
+            if (fileInput) {
+                fileInput.value = '';
+                const fileText = document.getElementById('regFileText');
+                if (fileText) {
+                    fileText.innerHTML = `
+                        <div style="font-size:32px;">📄</div>
+                        <p>Drop documents or <span>click to browse</span></p>
+                        <p style="font-size:12px;color:var(--text3);">PDF, JPG, PNG — text will be auto-extracted</p>
+                    `;
+                }
+            }
+            
+            // Hide parse status
+            const statusDiv = document.getElementById('parseStatus');
+            if (statusDiv) statusDiv.style.display = 'none';
+            
+            // Hide reset button
+            const resetBtn = document.getElementById('resetFormBtn');
+            if (resetBtn) resetBtn.style.display = 'none';
+            
+            toast('Form reset. You can now edit all fields or upload a different document.', 'info');
         }
 
         function parseDocumentText(text) {

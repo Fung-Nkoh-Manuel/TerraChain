@@ -30,52 +30,104 @@ class ParcelController {
         $kyc = $kycModel->getUserKYC($user['id']);
         if (!$kyc || $kyc['status'] !== 'verified') {
             $this->respond(false, 'KYC verification required before registering land', 403);
+            return;
         }
         
-        $data = json_decode(file_get_contents('php://input'), true);
+        // ✅ Read from $_POST since we're using FormData (multipart/form-data)
+        $title = trim($_POST['title'] ?? '');
+        $location = trim($_POST['location_address'] ?? '');
+        $sizeSqm = $_POST['size_sqm'] ?? null;
+        $propertyType = $_POST['property_type'] ?? 'residential';
+        $description = trim($_POST['description'] ?? '');
+        $gpsCoordinates = trim($_POST['gps_coordinates'] ?? '');
         
-        if (empty($data['title']) || empty($data['location_address'])) {
-            $this->respond(false, 'Title and location are required', 400);
+        // Validate required fields
+        if (empty($title)) {
+            $this->respond(false, 'Title is required', 400);
+            return;
+        }
+        if (empty($location)) {
+            $this->respond(false, 'Location is required', 400);
+            return;
         }
         
-        // Process any uploaded documents first
+        // Parse GPS coordinates if provided
+        $gpsLat = null;
+        $gpsLng = null;
+        if (!empty($gpsCoordinates)) {
+            $parts = preg_split('/[,\s]+/', $gpsCoordinates);
+            if (count($parts) >= 2) {
+                $gpsLat = floatval($parts[0]);
+                $gpsLng = floatval($parts[1]);
+            }
+        }
+        
+        // Process any uploaded documents
         $documentHash = null;
         $ipfsHash = null;
         $hashes = [];
         
         if (!empty($_FILES['documents'])) {
-            foreach ($_FILES['documents']['tmp_name'] as $i => $tmpName) {
+            $files = $this->normalizeFilesArray($_FILES['documents']);
+            
+            foreach ($files as $file) {
+                if ($file['error'] !== UPLOAD_ERR_OK) {
+                    continue;
+                }
+                
                 $fileInfo = [
-                    'name' => $_FILES['documents']['name'][$i],
-                    'tmp_name' => $tmpName,
-                    'size' => $_FILES['documents']['size'][$i],
+                    'name' => $file['name'],
+                    'tmp_name' => $file['tmp_name'],
+                    'size' => $file['size'],
                 ];
-                $result = $this->docService->processUpload($fileInfo);
-                $hashes[] = $result['sha256'];
+                
+                try {
+                    $result = $this->docService->processUpload($fileInfo);
+                    $hashes[] = $result['sha256'];
+                    
+                    // Use first file's IPFS hash as primary
+                    if (!$ipfsHash && !empty($result['ipfs_hash'])) {
+                        $ipfsHash = $result['ipfs_hash'];
+                    }
+                } catch (Exception $e) {
+                    error_log('Document upload error: ' . $e->getMessage());
+                }
             }
-            $documentHash = $this->docService->combineHashes($hashes);
-            $ipfsHash = $result['ipfs_hash'] ?? null;
+            
+            if (!empty($hashes)) {
+                $documentHash = $this->docService->combineHashes($hashes);
+            }
+        }
+        
+        // Create coordinates JSON if GPS data exists
+        $coordinatesJson = null;
+        if ($gpsLat && $gpsLng) {
+            $coordinatesJson = json_encode([
+                'type' => 'Point',
+                'coordinates' => [$gpsLng, $gpsLat]
+            ]);
         }
         
         // Create parcel (off-chain - pending status)
         $parcelId = $this->parcelModel->create([
-            'title' => $data['title'],
-            'location_address' => $data['location_address'],
-            'size_sqm' => $data['size_sqm'] ?? null,
-            'property_type' => $data['property_type'] ?? 'residential',
-            'description' => $data['description'] ?? null,
-            'gps_lat' => $data['gps_lat'] ?? null,
-            'gps_lng' => $data['gps_lng'] ?? null,
-            'coordinates_json' => $data['coordinates_json'] ?? null,
+            'title' => $title,
+            'location_address' => $location,
+            'size_sqm' => $sizeSqm ? floatval($sizeSqm) : null,
+            'property_type' => $propertyType,
+            'description' => $description,
+            'gps_lat' => $gpsLat,
+            'gps_lng' => $gpsLng,
+            'coordinates_json' => $coordinatesJson,
             'owner_id' => $user['id'],
             'document_hash' => $documentHash,
-            'ipfs_hash' => $ipfsHash
+            'ipfs_hash' => $ipfsHash ?? ''
         ]);
         
         // Create pending registration record
         $db = Database::getConnection();
         $stmt = $db->prepare('INSERT INTO pending_registrations (applicant_id, parcel_id) VALUES (?, ?)');
         $stmt->execute([$user['id'], $parcelId]);
+        $regId = $db->lastInsertId();
         
         // Save document records
         if (!empty($hashes)) {
@@ -89,15 +141,48 @@ class ParcelController {
         $this->notifications->sendToAdmins(
             'registration_submitted',
             'New Land Registration',
-            "Parcel \"{$data['title']}\" submitted by {$user['full_name']}",
+            "Parcel \"{$title}\" submitted by {$user['full_name']}",
             $parcelId,
             'parcel'
         );
         
+        // Log audit
+        $stmt = $db->prepare('INSERT INTO audit_log (user_id, action, entity_type, entity_id, notes) VALUES (?, ?, ?, ?, ?)');
+        $stmt->execute([$user['id'], 'registration_submitted', 'parcel', $parcelId, "Title: {$title}, Location: {$location}"]);
+        
         $this->respond(true, [
             'parcel_id' => $parcelId,
-            'message' => 'Registration submitted. Awaiting admin review.'
+            'registration_id' => $regId,
+            'parcel_number' => $this->parcelModel->findById($parcelId)['parcel_number'] ?? null,
+            'message' => 'Registration submitted successfully. Awaiting admin review.',
+            'documents_uploaded' => count($hashes),
+            'ipfs_uploaded' => !empty($ipfsHash)
         ]);
+    }
+
+    /**
+     * Normalize PHP's weird $_FILES array structure
+     */
+    private function normalizeFilesArray(array $files): array {
+        $normalized = [];
+        
+        if (isset($files['name']) && is_array($files['name'])) {
+            // Multiple files
+            foreach ($files['name'] as $key => $name) {
+                $normalized[] = [
+                    'name' => $name,
+                    'tmp_name' => $files['tmp_name'][$key] ?? '',
+                    'size' => $files['size'][$key] ?? 0,
+                    'error' => $files['error'][$key] ?? UPLOAD_ERR_NO_FILE,
+                    'type' => $files['type'][$key] ?? '',
+                ];
+            }
+        } elseif (isset($files['name'])) {
+            // Single file
+            $normalized[] = $files;
+        }
+        
+        return $normalized;
     }
     
     /**
