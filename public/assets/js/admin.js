@@ -412,8 +412,181 @@ async function verifyKYC(kycId, approved) {
 // ══════════════════════════════════════════════════════
 //  DISPUTE ACTIONS
 // ══════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════
+//  VIEW DISPUTE DETAILS
+// ══════════════════════════════════════════════════════
 async function viewDispute(disputeId) {
-  toast('Loading dispute #' + disputeId + '...', 'info');
+    toast('Loading dispute details...', 'info');
+    
+    try {
+        // Fetch dispute details from API
+        const res = await api('/disputes/get', 'POST', { id: disputeId });
+        
+        if (!res.success) {
+            toast('Failed to load dispute details', 'error');
+            return;
+        }
+        
+        const d = res.data;
+        
+        // Build the modal
+        const existing = document.querySelector('.modal-overlay');
+        if (existing) existing.remove();
+        
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;';
+        
+        const statusColors = {
+            'open': 'badge-yellow',
+            'under_review': 'badge-blue',
+            'resolved_complainant': 'badge-green',
+            'resolved_respondent': 'badge-green',
+            'dismissed': 'badge-red'
+        };
+        
+        const statusLabels = {
+            'open': 'Open',
+            'under_review': 'Under Review',
+            'resolved_complainant': 'Resolved (Complainant)',
+            'resolved_respondent': 'Resolved (Respondent)',
+            'dismissed': 'Dismissed'
+        };
+        
+        const typeLabels = {
+            'ownership': 'Ownership',
+            'boundary': 'Boundary',
+            'fraud': 'Fraud / Forgery',
+            'transfer': 'Unauthorized Transfer',
+            'public_land': 'Public Land',
+            'other': 'Other'
+        };
+        
+        modal.innerHTML = `
+            <div style="background:var(--surface,#1a1f25);border:1px solid var(--border,#242c35);border-radius:12px;padding:28px;max-width:650px;width:90%;max-height:85vh;overflow-y:auto;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                    <h3 style="font-family:Syne,sans-serif;color:#e8edf2;margin:0;">⚖️ Dispute #${d.id}</h3>
+                    <button onclick="this.closest('.modal-overlay').remove()" style="background:none;border:none;color:#4a5a6a;font-size:22px;cursor:pointer;">✕</button>
+                </div>
+                
+                <!-- Status Banner -->
+                <div style="background:rgba(${d.status === 'open' ? '255,204,0' : d.status.includes('resolved') ? '0,229,160' : '255,59,92'},0.08);border:1px solid rgba(${d.status === 'open' ? '255,204,0' : d.status.includes('resolved') ? '0,229,160' : '255,59,92'},0.2);border-radius:8px;padding:12px 16px;margin-bottom:20px;">
+                    <span class="badge ${statusColors[d.status] || 'badge-yellow'}">${statusLabels[d.status] || d.status}</span>
+                    <span style="margin-left:8px;color:#e8edf2;font-size:14px;">Filed on ${formatDate(d.created_at)}</span>
+                </div>
+                
+                <!-- Parcel Info -->
+                <div style="margin-bottom:16px;">
+                    <h4 style="color:#8a9bb0;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Parcel Information</h4>
+                    <div style="background:#111418;border:1px solid #242c35;border-radius:8px;padding:14px;">
+                        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                            <span style="color:#8a9bb0;">Parcel:</span>
+                            <span style="color:#e8edf2;font-weight:600;">${escapeHtml(d.parcel_title || 'N/A')}</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+                            <span style="color:#8a9bb0;">Number:</span>
+                            <span style="color:#00e5a0;font-family:monospace;">${escapeHtml(d.parcel_number || 'N/A')}</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;">
+                            <span style="color:#8a9bb0;">Location:</span>
+                            <span style="color:#e8edf2;">${escapeHtml(d.location_address || 'N/A')}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Parties -->
+                <div style="margin-bottom:16px;">
+                    <h4 style="color:#8a9bb0;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Parties</h4>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <div style="background:#111418;border:1px solid #242c35;border-radius:8px;padding:12px;">
+                            <div style="color:#ffcc00;font-size:11px;margin-bottom:4px;">COMPLAINANT</div>
+                            <div style="color:#e8edf2;font-weight:600;">${escapeHtml(d.complainant_name || 'N/A')}</div>
+                            <div style="color:#8a9bb0;font-size:12px;">${escapeHtml(d.complainant_email || '')}</div>
+                        </div>
+                        <div style="background:#111418;border:1px solid #242c35;border-radius:8px;padding:12px;">
+                            <div style="color:#4d9eff;font-size:11px;margin-bottom:4px;">RESPONDENT</div>
+                            <div style="color:#e8edf2;font-weight:600;">${escapeHtml(d.respondent_name || 'Not specified')}</div>
+                            <div style="color:#8a9bb0;font-size:12px;">${escapeHtml(d.respondent_email || '')}</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Dispute Details -->
+                <div style="margin-bottom:16px;">
+                    <h4 style="color:#8a9bb0;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Dispute Details</h4>
+                    <div style="background:#111418;border:1px solid #242c35;border-radius:8px;padding:14px;">
+                        <div style="margin-bottom:8px;">
+                            <span style="color:#8a9bb0;">Type: </span>
+                            <span class="badge badge-orange">${typeLabels[d.dispute_type] || d.dispute_type}</span>
+                        </div>
+                        <div>
+                            <span style="color:#8a9bb0;">Description:</span>
+                            <p style="color:#e8edf2;margin-top:6px;line-height:1.6;white-space:pre-wrap;">${escapeHtml(d.description || 'No description')}</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Evidence -->
+                ${d.evidence_ipfs_hash ? `
+                <div style="margin-bottom:16px;">
+                    <h4 style="color:#8a9bb0;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Evidence</h4>
+                    <a href="https://gateway.pinata.cloud/ipfs/${d.evidence_ipfs_hash.replace('ipfs://', '')}" target="_blank" 
+                       style="display:inline-flex;align-items:center;gap:6px;padding:10px 16px;background:rgba(0,102,255,0.1);color:#4d9eff;border:1px solid rgba(0,102,255,0.2);border-radius:8px;text-decoration:none;">
+                        📎 View Evidence on IPFS
+                    </a>
+                </div>
+                ` : ''}
+                
+                <!-- Resolution (if resolved) -->
+                ${d.status !== 'open' && d.status !== 'under_review' ? `
+                <div style="margin-bottom:16px;">
+                    <h4 style="color:#8a9bb0;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Resolution</h4>
+                    <div style="background:#111418;border:1px solid #242c35;border-radius:8px;padding:14px;">
+                        <div style="margin-bottom:6px;">
+                            <span style="color:#8a9bb0;">Outcome: </span>
+                            <span style="color:#e8edf2;">${(d.outcome || 'no_change').replace(/_/g, ' ')}</span>
+                        </div>
+                        <div>
+                            <span style="color:#8a9bb0;">Notes:</span>
+                            <p style="color:#e8edf2;margin-top:4px;">${escapeHtml(d.resolution_notes || 'No notes')}</p>
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
+                
+                <!-- Votes -->
+                ${d.votes && d.votes.length > 0 ? `
+                <div style="margin-bottom:16px;">
+                    <h4 style="color:#8a9bb0;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Validator Votes (${d.votes_for || 0} For / ${d.votes_against || 0} Against)</h4>
+                    <div style="background:#111418;border:1px solid #242c35;border-radius:8px;padding:14px;">
+                        ${d.votes.map(v => `
+                            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(36,44,53,0.5);">
+                                <span style="color:#e8edf2;">${escapeHtml(v.full_name || v.validator_wallet)}</span>
+                                <span class="badge badge-${v.vote === 'support' ? 'green' : 'red'}">${v.vote === 'support' ? '✓ For' : '✕ Against'}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                ` : ''}
+                
+                <!-- Actions -->
+                ${d.status === 'open' || d.status === 'under_review' ? `
+                <div style="display:flex;gap:10px;margin-top:20px;">
+                    <button class="btn btn-primary" onclick="this.closest('.modal-overlay').remove(); resolveDispute(${d.id});" style="flex:1;">
+                        ✓ Resolve Dispute
+                    </button>
+                </div>
+                ` : ''}
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+        
+    } catch (err) {
+        console.error('View dispute error:', err);
+        toast('Failed to load dispute details', 'error');
+    }
 }
 
 // ══════════════════════════════════════════════════════

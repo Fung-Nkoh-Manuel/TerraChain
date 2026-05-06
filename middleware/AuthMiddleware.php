@@ -48,16 +48,6 @@ class AuthMiddleware {
         return $user;
     }
     
-    public function requireValidator(): array {
-        $user = $this->requireAuth();
-        if (!in_array($user['role'], ['admin', 'validator'])) {
-            http_response_code(403);
-            echo json_encode(['success' => false, 'error' => 'Validator access required']);
-            exit;
-        }
-        return $user;
-    }
-    
     public function login(string $username, string $password): ?array {
         $userModel = new User();
         $user = $userModel->findByUsername($username);

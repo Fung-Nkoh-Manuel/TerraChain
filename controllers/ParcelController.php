@@ -325,7 +325,7 @@ class ParcelController {
      * POST /api/parcels/reject (Admin/Validator)
      */
     public function reject(): void {
-        $reviewer = $this->auth->requireValidator();
+        $reviewer = $this->auth->requireAdmin();
         $data = json_decode(file_get_contents('php://input'), true);
         
         if (empty($data['registration_id']) || empty($data['reason'])) {
@@ -406,7 +406,7 @@ class ParcelController {
      * GET /api/parcels/pending (Admin/Validator)
      */
     public function pending(): void {
-        $this->auth->requireValidator();
+        $this->auth->requireAdmin();
         $pending = $this->parcelModel->getPendingRegistrations();
         $this->respond(true, $pending);
     }

@@ -88,7 +88,8 @@ $routes = [
     
     // Disputes
     'POST /api/disputes/file'    => ['DisputeController', 'file'],
-    'POST /api/disputes/vote'    => ['DisputeController', 'vote'],
+    'POST /api/disputes/get'     => ['DisputeController', 'get'],
+    // 'POST /api/disputes/vote'    => ['DisputeController', 'vote'],
     'POST /api/disputes/resolve' => ['DisputeController', 'resolve'],
     'GET /api/disputes/all'      => ['DisputeController', 'all'],
     

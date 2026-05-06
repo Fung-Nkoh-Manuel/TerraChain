@@ -172,7 +172,7 @@ class KYCController {
      * Verify or reject KYC - entirely off-chain
      */
     public function verify(): void {
-        $reviewer = $this->auth->requireValidator();
+        $reviewer = $this->auth->requireAdmin();
         $data = json_decode(file_get_contents('php://input'), true);
         
         if (empty($data['kyc_id'])) {
@@ -244,7 +244,7 @@ class KYCController {
         ];
         
         // Admins can see more details
-        if (in_array($user['role'], ['admin', 'validator'])) {
+        if ($user['role'] === 'admin') {
             $response['document_hash'] = $kyc['document_hash'];
             $response['ipfs_hash'] = $kyc['ipfs_hash'];
         }
@@ -257,7 +257,7 @@ class KYCController {
      * List all pending KYC submissions
      */
     public function pending(): void {
-        $this->auth->requireValidator();
+        $this->auth->requireAdmin();
         $pending = $this->kycModel->getPendingKYC();
         
         // Add IPFS gateway URLs for document viewing
