@@ -86,25 +86,31 @@ async function ensureWalletConnected() {
 }
 
 // ── Tab Switching ────────────────────────────────────
+// ── Tab Switching ────────────────────────────────────
 function switchTab(tabName, el) {
-  document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-  const targetTab = document.getElementById('tab-' + tabName);
-  if (targetTab) targetTab.classList.add('active');
+    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+    const targetTab = document.getElementById('tab-' + tabName);
+    if (targetTab) targetTab.classList.add('active');
 
-  document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => item.classList.remove('active'));
-  if (el) el.classList.add('active');
+    document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => item.classList.remove('active'));
+    if (el) el.classList.add('active');
 
-  const titles = {
-    'overview': 'Admin Overview',
-    'registrations': 'Land Registrations',
-    'kyc': 'KYC Verification',
-    'transfers': 'Transfer Requests',
-    'disputes': 'Disputes',
-    'settings': 'Wallet Settings',
-    'blockchain': 'Blockchain Status'
-  };
-  const titleEl = document.getElementById('tabTitle');
-  if (titleEl) titleEl.textContent = titles[tabName] || tabName;
+    const titles = {
+        'overview': 'Admin Overview',
+        'registrations': 'Land Registrations',
+        'kyc': 'KYC Verification',
+        'transfers': 'Transfer Requests',
+        'disputes': 'Disputes',
+        'settings': 'Wallet Settings',
+        'blockchain': 'Blockchain Status'
+    };
+    const titleEl = document.getElementById('tabTitle');
+    if (titleEl) titleEl.textContent = titles[tabName] || tabName;
+
+    // Track current tab for auto-refresh
+    currentTab = tabName;
+    // Refresh immediately when switching tabs
+    setTimeout(() => refreshCurrentTab(), 500);
 }
 
 // ── Toast Notifications ──────────────────────────────
@@ -556,4 +562,344 @@ document.addEventListener('DOMContentLoaded', async function () {
   if (logContainer) {
     logContainer.innerHTML = '<div class="empty-state"><p>Admin panel ready. Use the sidebar to manage operations.</p></div>';
   }
+
+  // Start auto-refresh
+  startAutoRefresh();
+  console.log('✅ Auto-refresh initialized');
 });
+
+// ══════════════════════════════════════════════════════
+//  AUTO-REFRESH ADMIN DATA (Poll every 15 seconds)
+// ══════════════════════════════════════════════════════
+
+let autoRefreshInterval = null;
+let currentTab = 'overview';
+
+// Start auto-refresh
+function startAutoRefresh() {
+  // Clear existing interval
+  if (autoRefreshInterval) {
+    clearInterval(autoRefreshInterval);
+  }
+
+  // Refresh every 15 seconds
+  autoRefreshInterval = setInterval(async () => {
+    await refreshCurrentTab();
+  }, 15000); // 15 seconds
+
+  console.log('🔄 Auto-refresh started (every 15s)');
+}
+
+// Stop auto-refresh
+function stopAutoRefresh() {
+  if (autoRefreshInterval) {
+    clearInterval(autoRefreshInterval);
+    autoRefreshInterval = null;
+  }
+}
+
+// Refresh the currently active tab
+async function refreshCurrentTab() {
+  // Get current active tab
+  const activeTab = document.querySelector('.tab-content.active');
+  if (!activeTab) return;
+
+  const tabId = activeTab.id.replace('tab-', '');
+  currentTab = tabId;
+
+  console.log('🔄 Auto-refreshing tab:', tabId);
+
+  // Update badge counts
+  await updateBadges();
+
+  // Refresh specific tab content
+  switch (tabId) {
+    case 'overview':
+      await refreshOverviewStats();
+      break;
+    case 'registrations':
+      await refreshRegistrations();
+      break;
+    case 'kyc':
+      await refreshKYC();
+      break;
+    case 'transfers':
+      await refreshTransfers();
+      break;
+    case 'disputes':
+      await refreshDisputes();
+      break;
+  }
+}
+
+// Update badge counts in sidebar
+async function updateBadges() {
+  try {
+    // Get pending counts
+    const [kycRes, regRes] = await Promise.all([
+      api('/kyc/pending', 'GET'),
+      api('/parcels/pending', 'GET')
+    ]);
+
+    // Update KYC badge
+    const kycBadge = document.querySelector('.nav-item[onclick*="kyc"] .badge');
+    if (kycBadge && kycRes.success) {
+      const count = kycRes.data?.length || 0;
+      if (count > 0) {
+        kycBadge.textContent = count;
+        kycBadge.style.display = 'inline';
+      } else {
+        kycBadge.style.display = 'none';
+      }
+    }
+
+    // Update registrations badge
+    const regBadge = document.querySelector('.nav-item[onclick*="registrations"] .badge');
+    if (regBadge && regRes.success) {
+      const count = regRes.data?.length || 0;
+      if (count > 0) {
+        regBadge.textContent = count;
+        regBadge.style.display = 'inline';
+      } else {
+        regBadge.style.display = 'none';
+      }
+    }
+
+    // Update overview badge (combined)
+    const overviewBadge = document.querySelector('.nav-item[onclick*="overview"] .badge');
+    if (overviewBadge && kycRes.success && regRes.success) {
+      const total = (kycRes.data?.length || 0) + (regRes.data?.length || 0);
+      if (total > 0) {
+        overviewBadge.textContent = total;
+        overviewBadge.style.display = 'inline';
+      } else {
+        overviewBadge.style.display = 'none';
+      }
+    }
+
+  } catch (e) {
+    console.error('Badge update error:', e);
+  }
+}
+
+// Refresh overview stats
+async function refreshOverviewStats() {
+  try {
+    const [kycRes, regRes, transferRes, disputeRes] = await Promise.all([
+      api('/kyc/pending', 'GET'),
+      api('/parcels/pending', 'GET'),
+      api('/transfers/all', 'GET'),
+      api('/disputes/all', 'GET')
+    ]);
+
+    // Update stat values
+    const statValues = document.querySelectorAll('#tab-overview .stat-value');
+    if (statValues.length >= 4) {
+      if (regRes.success) statValues[0].textContent = regRes.data?.length || 0;
+      if (kycRes.success) statValues[1].textContent = kycRes.data?.length || 0;
+      if (transferRes.success) statValues[2].textContent = transferRes.data?.length || 0;
+      if (disputeRes.success) statValues[3].textContent = disputeRes.data?.length || 0;
+    }
+  } catch (e) {
+    console.error('Stats refresh error:', e);
+  }
+}
+
+// Refresh registrations tab
+async function refreshRegistrations() {
+  try {
+    const res = await api('/parcels/pending', 'GET');
+    if (!res.success) return;
+
+    const registrations = res.data || [];
+    const tableBody = document.querySelector('#tab-registrations tbody');
+    if (!tableBody) return;
+
+    if (registrations.length === 0) {
+      tableBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">No pending registrations</div></td></tr>';
+      return;
+    }
+
+    // Only update if data changed (compare first ID)
+    const firstExistingId = tableBody.querySelector('tr:first-child td:first-child')?.textContent;
+    const firstNewId = '#' + registrations[0]?.id;
+
+    if (firstExistingId !== firstNewId) {
+      // Data changed - rebuild table
+      let html = '';
+      registrations.forEach(reg => {
+        html += `
+                    <tr>
+                        <td>#${reg.id}</td>
+                        <td>
+                            <div>${escapeHtml(reg.applicant_name || '')}</div>
+                            <small>${escapeHtml(reg.applicant_email || '')}</small>
+                        </td>
+                        <td>${escapeHtml(reg.title || '')}</td>
+                        <td>${escapeHtml(reg.location_address || '')}</td>
+                        <td>
+                            ${reg.document_url ? `<a href="${reg.document_url}" target="_blank" class="btn btn-sm btn-outline">📎 View</a>` : '<span class="text-muted">None</span>'}
+                        </td>
+                        <td>${formatDate(reg.submitted_at)}</td>
+                        <td class="action-buttons">
+                            <button class="btn btn-sm btn-success" onclick="approveRegistration(${reg.id})">✓ Approve & Record</button>
+                            <button class="btn btn-sm btn-danger" onclick="rejectRegistration(${reg.id})">✕ Reject</button>
+                        </td>
+                    </tr>
+                `;
+      });
+      tableBody.innerHTML = html;
+    }
+  } catch (e) {
+    console.error('Registrations refresh error:', e);
+  }
+}
+
+// Refresh KYC tab
+async function refreshKYC() {
+  try {
+    const res = await api('/kyc/pending', 'GET');
+    if (!res.success) return;
+
+    const kycList = res.data || [];
+    const tableBody = document.querySelector('#tab-kyc tbody');
+    if (!tableBody) return;
+
+    if (kycList.length === 0) {
+      tableBody.innerHTML = '<tr><td colspan="4"><div class="empty-state">No pending KYC</div></td></tr>';
+      return;
+    }
+
+    const firstExistingId = tableBody.querySelector('tr:first-child td:first-child div')?.textContent;
+    const firstNewName = kycList[0]?.full_name;
+
+    if (firstExistingId !== firstNewName) {
+      let html = '';
+      kycList.forEach(kyc => {
+        html += `
+                    <tr>
+                        <td>
+                            <div>${escapeHtml(kyc.full_name || '')}</div>
+                            <small>${escapeHtml(kyc.email || '')}</small>
+                        </td>
+                        <td>
+                            ${kyc.document_url ? `<a href="${kyc.document_url}" target="_blank" class="btn btn-sm btn-outline">📎 View</a>` : '<span>Hashed</span>'}
+                        </td>
+                        <td>${formatDate(kyc.submitted_at)}</td>
+                        <td class="action-buttons">
+                            <button class="btn btn-sm btn-success" onclick="verifyKYC(${kyc.id}, true)">✓ Verify</button>
+                            <button class="btn btn-sm btn-danger" onclick="verifyKYC(${kyc.id}, false)">✕ Reject</button>
+                        </td>
+                    </tr>
+                `;
+      });
+      tableBody.innerHTML = html;
+    }
+  } catch (e) {
+    console.error('KYC refresh error:', e);
+  }
+}
+
+// Refresh transfers tab
+async function refreshTransfers() {
+  try {
+    const res = await api('/transfers/all', 'GET');
+    if (!res.success) return;
+
+    const transfers = res.data || [];
+    const tableBody = document.querySelector('#tab-transfers tbody');
+    if (!tableBody) return;
+
+    if (transfers.length === 0) {
+      tableBody.innerHTML = '<tr><td colspan="7"><div class="empty-state">No transfers</div></td></tr>';
+      return;
+    }
+
+    const firstExistingId = tableBody.querySelector('tr:first-child td:first-child')?.textContent;
+    const firstNewId = '#' + transfers[0]?.id;
+
+    if (firstExistingId !== firstNewId) {
+      let html = '';
+      transfers.forEach(t => {
+        const statusClass = t.status === 'pending' ? 'yellow' : (t.status === 'approved' ? 'green' : 'red');
+        html += `
+                    <tr>
+                        <td>#${t.id}</td>
+                        <td>${escapeHtml(t.parcel_title || '')}</td>
+                        <td>${escapeHtml(t.sender_name || '')}</td>
+                        <td>${escapeHtml(t.recipient_name || '')}</td>
+                        <td>${escapeHtml(t.transfer_type || '')}</td>
+                        <td><span class="badge badge-${statusClass}">${t.status}</span></td>
+                        <td>
+                            ${t.status === 'pending' ? `
+                                <button class="btn btn-sm btn-success" onclick="approveTransfer(${t.id})">✓ Approve</button>
+                                <button class="btn btn-sm btn-danger" onclick="rejectTransfer(${t.id})">✕ Reject</button>
+                            ` : '—'}
+                        </td>
+                    </tr>
+                `;
+      });
+      tableBody.innerHTML = html;
+    }
+  } catch (e) {
+    console.error('Transfers refresh error:', e);
+  }
+}
+
+// Refresh disputes tab
+async function refreshDisputes() {
+  try {
+    const res = await api('/disputes/all', 'GET');
+    if (!res.success) return;
+
+    const disputes = res.data || [];
+    const tableBody = document.querySelector('#tab-disputes tbody');
+    if (!tableBody) return;
+
+    if (disputes.length === 0) {
+      tableBody.innerHTML = '<tr><td colspan="6"><div class="empty-state">No disputes</div></td></tr>';
+      return;
+    }
+
+    const firstExistingId = tableBody.querySelector('tr:first-child td:first-child')?.textContent;
+    const firstNewId = '#' + disputes[0]?.id;
+
+    if (firstExistingId !== firstNewId) {
+      let html = '';
+      disputes.forEach(d => {
+        const statusClass = d.status === 'open' ? 'yellow' : (d.status === 'under_review' ? 'blue' : 'green');
+        html += `
+                    <tr>
+                        <td>#${d.id}</td>
+                        <td>${escapeHtml(d.parcel_title || '')}</td>
+                        <td>${escapeHtml(d.complainant_name || '')}</td>
+                        <td>${escapeHtml(d.dispute_type || '')}</td>
+                        <td><span class="badge badge-${statusClass}">${(d.status || '').replace(/_/g, ' ')}</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-outline" onclick="viewDispute(${d.id})">View</button>
+                            ${d.status === 'under_review' ? `<button class="btn btn-sm btn-primary" onclick="resolveDispute(${d.id})">Resolve</button>` : ''}
+                        </td>
+                    </tr>
+                `;
+      });
+      tableBody.innerHTML = html;
+    }
+  } catch (e) {
+    console.error('Disputes refresh error:', e);
+  }
+}
+
+// Helper
+function escapeHtml(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}

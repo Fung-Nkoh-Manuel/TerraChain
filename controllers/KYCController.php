@@ -28,24 +28,22 @@ class KYCController {
         // Check if already verified
         if ($this->kycModel->isVerified($user['id'])) {
             $this->respond(false, 'KYC already verified', 409);
+            return;
         }
         
         // Process uploaded documents
-        $documentHash = null;
-        $ipfsHash = null;
         $allHashes = [];
+        $ipfsHash = null;
         
         if (empty($_FILES['documents'])) {
             $this->respond(false, 'KYC documents required', 400);
+            return;
         }
         
-        // Handle multiple file uploads
         $files = $this->normalizeFilesArray($_FILES['documents']);
         
         foreach ($files as $file) {
-            if ($file['error'] !== UPLOAD_ERR_OK) {
-                continue;
-            }
+            if ($file['error'] !== UPLOAD_ERR_OK) continue;
             
             $fileInfo = [
                 'name' => $file['name'],
@@ -56,33 +54,82 @@ class KYCController {
             try {
                 $result = $this->docService->processUpload($fileInfo, true);
                 $allHashes[] = $result['sha256'];
-                
-                // Use first file's IPFS hash as primary
-                if (!$ipfsHash) {
+                if (!$ipfsHash && !empty($result['ipfs_hash'])) {
                     $ipfsHash = $result['ipfs_hash'];
                 }
             } catch (Exception $e) {
-                $this->respond(false, 'Upload failed: ' . $e->getMessage(), 400);
+                error_log('KYC upload error: ' . $e->getMessage());
             }
         }
         
         if (empty($allHashes)) {
             $this->respond(false, 'No valid documents uploaded', 400);
+            return;
         }
         
-        // Combine hashes for the document hash
         $documentHash = $this->docService->combineHashes($allHashes);
+        $ipfsHash = $ipfsHash ?? '';
         
-        // Submit KYC (no blockchain interaction)
+        // ═══════════════════════════════════════════════
+        // ✅ CHECK: Has this document been used by another user?
+        // ═══════════════════════════════════════════════
+        $db = Database::getConnection();
+        
+        // Check individual hashes AND combined hash
+        foreach ($allHashes as $hash) {
+            $stmt = $db->prepare('
+                SELECT k.id, u.full_name, u.email 
+                FROM kyc_records k 
+                JOIN users u ON k.user_id = u.id 
+                WHERE k.document_hash LIKE ? 
+                AND k.user_id != ?
+            ');
+            $stmt->execute(['%' . $hash . '%', $user['id']]);
+            $dup = $stmt->fetch();
+            
+            if ($dup) {
+                $this->respond(false, 
+                    "❌ DUPLICATE DOCUMENT: This document (or part of it) was already submitted by \"{$dup['full_name']}\" ({$dup['email']}).\n\n" .
+                    "The same identity document cannot be used by multiple people. If you believe this is an error, please contact an administrator.",
+                    409
+                );
+                return;
+            }
+        }
+        
+        // Also check the combined hash
+        $stmt = $db->prepare('
+            SELECT k.id, u.full_name, u.email 
+            FROM kyc_records k 
+            JOIN users u ON k.user_id = u.id 
+            WHERE k.document_hash = ? 
+            AND k.user_id != ?
+        ');
+        $stmt->execute([$documentHash, $user['id']]);
+        $dupCombined = $stmt->fetch();
+        
+        if ($dupCombined) {
+            $this->respond(false,
+                "❌ DUPLICATE DOCUMENTS: These exact documents were already submitted by \"{$dupCombined['full_name']}\" ({$dupCombined['email']}).\n\n" .
+                "The same documents cannot be used for multiple KYC verifications.",
+                409
+            );
+            return;
+        }
+        
+        // ═══════════════════════════════════════════════
+        // ALL CHECKS PASSED - SUBMIT KYC
+        // ═══════════════════════════════════════════════
+        
         $kycId = $this->kycModel->submit($user['id'], $documentHash, $ipfsHash);
         
         // Update user profile if provided
-        $data = json_decode(file_get_contents('php://input'), true) ?? [];
-        if (!empty($data['full_name']) || !empty($data['national_id'])) {
+        $inputData = $_POST;
+        if (!empty($inputData['full_name']) || !empty($inputData['national_id'])) {
             $this->userModel->updateProfile($user['id'], [
-                'full_name' => $data['full_name'] ?? $user['full_name'],
-                'phone' => $data['phone'] ?? $user['phone'],
-                'national_id' => $data['national_id'] ?? $user['national_id'],
+                'full_name' => $inputData['full_name'] ?? $user['full_name'],
+                'phone' => $inputData['phone'] ?? ($user['phone'] ?? ''),
+                'national_id' => $inputData['national_id'] ?? ($user['national_id'] ?? ''),
                 'email' => $user['email']
             ]);
         }
@@ -98,8 +145,9 @@ class KYCController {
         
         $this->respond(true, [
             'kyc_id' => $kycId,
-            'message' => 'KYC documents submitted successfully. Awaiting verification.',
-            'status' => 'pending'
+            'message' => '✅ KYC documents submitted successfully. Awaiting admin verification.',
+            'status' => 'pending',
+            'ipfs_uploaded' => !empty($ipfsHash)
         ]);
     }
     

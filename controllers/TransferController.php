@@ -7,6 +7,7 @@ class TransferController {
     private User $userModel;
     private BlockchainService $blockchain;
     private NotificationService $notifications;
+    private DocumentService $docService;
     private AuthMiddleware $auth;
     
     public function __construct() {
@@ -15,6 +16,7 @@ class TransferController {
         $this->userModel = new User();
         $this->blockchain = new BlockchainService();
         $this->notifications = new NotificationService();
+        $this->docService = new DocumentService();
         $this->auth = new AuthMiddleware();
     }
     
@@ -23,48 +25,153 @@ class TransferController {
      */
     public function request(): void {
         $user = $this->auth->requireAuth();
-        $data = json_decode(file_get_contents('php://input'), true);
         
-        if (empty($data['parcel_number']) || empty($data['recipient_email'])) {
-            $this->respond(false, 'Parcel number and recipient email required', 400);
+        // Read from JSON or FormData
+        $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+        
+        if (strpos($contentType, 'application/json') !== false) {
+            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        } else {
+            $data = $_POST;
         }
         
-        // Find parcel
-        $parcel = $this->parcelModel->findByNumber($data['parcel_number']);
-        if (!$parcel || $parcel['owner_id'] !== $user['id']) {
-            $this->respond(false, 'Parcel not found or you are not the owner', 403);
+        $parcelNumber = trim($data['parcel_number'] ?? '');
+        $recipientEmail = trim($data['recipient_email'] ?? '');
+        $transferType = $data['transfer_type'] ?? 'sale';
+        
+        // ═══════════════════════════════════════════════
+        // VALIDATION CHECKS (BEFORE ANYTHING IS SAVED)
+        // ═══════════════════════════════════════════════
+        
+        // Check 1: Parcel number required
+        if (empty($parcelNumber)) {
+            $this->respond(false, 'Parcel number is required.', 400);
+            return;
         }
         
-        // Find recipient
-        $recipient = $this->userModel->findByEmail($data['recipient_email']);
+        // Check 2: Recipient email required
+        if (empty($recipientEmail)) {
+            $this->respond(false, 'Recipient email is required.', 400);
+            return;
+        }
+        
+        // Check 3: Supporting document required
+        if (empty($_FILES['supporting_doc']) || $_FILES['supporting_doc']['error'] !== UPLOAD_ERR_OK) {
+            $this->respond(false, '❌ Supporting document is required for transfer. Please upload a document that proves the transfer agreement.', 400);
+            return;
+        }
+        
+        // Check 4: Find parcel
+        $parcel = $this->parcelModel->findByNumber($parcelNumber);
+        if (!$parcel) {
+            $this->respond(false, "Parcel \"{$parcelNumber}\" not found. Please check the parcel number.", 404);
+            return;
+        }
+        
+        // Check 5: User must be the owner
+        if ($parcel['owner_id'] != $user['id']) {
+            $this->respond(false, 'You are not the current owner of this parcel. Only the owner can initiate a transfer.', 403);
+            return;
+        }
+        
+        // Check 6: Parcel status must be "owned"
+        if ($parcel['status'] !== 'owned') {
+            $this->respond(false, "This parcel has status \"{$parcel['status']}\" and cannot be transferred. Only owned parcels can be transferred.", 400);
+            return;
+        }
+        
+        // Check 7: Parcel must not be disputed
+        if ($parcel['status'] === 'disputed') {
+            $this->respond(false, 'This parcel is currently under dispute and cannot be transferred.', 409);
+            return;
+        }
+        
+        // Check 8: Find recipient
+        $recipient = $this->userModel->findByEmail($recipientEmail);
         if (!$recipient) {
-            $this->respond(false, 'Recipient user not found', 404);
+            $this->respond(false, "No user found with email \"{$recipientEmail}\". The recipient must have a TerraChain account.", 404);
+            return;
         }
         
-        if ($recipient['id'] === $user['id']) {
-            $this->respond(false, 'Cannot transfer to yourself', 400);
+        // Check 9: Cannot transfer to yourself
+        if ($recipient['id'] == $user['id']) {
+            $this->respond(false, 'You cannot transfer a parcel to yourself.', 400);
+            return;
         }
         
-        // Create transfer request
+        // Check 10: Recipient must be KYC verified
+        $kycModel = new KYC();
+        $recipientKYC = $kycModel->getUserKYC($recipient['id']);
+        if (!$recipientKYC || $recipientKYC['status'] !== 'verified') {
+            $this->respond(false, "❌ Recipient \"{$recipient['full_name']}\" ({$recipientEmail}) has NOT completed KYC verification.\n\nThe recipient must verify their identity before they can receive land.", 400);
+            return;
+        }
+        
+        // Check 11: Sender must be KYC verified
+        $senderKYC = $kycModel->getUserKYC($user['id']);
+        if (!$senderKYC || $senderKYC['status'] !== 'verified') {
+            $this->respond(false, '❌ You must complete KYC verification before initiating a transfer.', 400);
+            return;
+        }
+        
+        // ═══════════════════════════════════════════════
+        // PROCESS SUPPORTING DOCUMENT
+        // ═══════════════════════════════════════════════
+        
+        $docHash = null;
+        $ipfsHash = null;
+        
+        if (!empty($_FILES['supporting_doc'])) {
+            try {
+                $fileInfo = [
+                    'name' => $_FILES['supporting_doc']['name'],
+                    'tmp_name' => $_FILES['supporting_doc']['tmp_name'],
+                    'size' => $_FILES['supporting_doc']['size'],
+                ];
+                $result = $this->docService->processUpload($fileInfo);
+                $docHash = $result['sha256'];
+                $ipfsHash = $result['ipfs_hash'];
+            } catch (Exception $e) {
+                $this->respond(false, 'Failed to upload supporting document: ' . $e->getMessage(), 400);
+                return;
+            }
+        }
+        
+        // ═══════════════════════════════════════════════
+        // ALL CHECKS PASSED - CREATE TRANSFER
+        // ═══════════════════════════════════════════════
+        
         $transferId = $this->transferModel->create([
             'parcel_id' => $parcel['id'],
             'sender_id' => $user['id'],
             'recipient_id' => $recipient['id'],
-            'transfer_type' => $data['transfer_type'] ?? 'sale'
+            'transfer_type' => $transferType,
+            'doc_hash' => $docHash,
+            'ipfs_hash' => $ipfsHash
         ]);
+        
+        // Notify recipient
+        $this->notifications->send(
+            $recipient['id'],
+            'transfer_received',
+            '📋 Transfer Request Received',
+            "{$user['full_name']} wants to transfer parcel \"{$parcel['title']}\" ({$parcel['parcel_number']}) to you.\n\nAwaiting admin approval.",
+            $transferId,
+            'transfer'
+        );
         
         // Notify admins
         $this->notifications->sendToAdmins(
             'transfer_requested',
             'New Transfer Request',
-            "Transfer of \"{$parcel['title']}\" from {$user['full_name']} to {$recipient['full_name']} requested.",
+            "Transfer of \"{$parcel['title']}\" ({$parcel['parcel_number']}) from {$user['full_name']} to {$recipient['full_name']}.",
             $transferId,
             'transfer'
         );
         
         $this->respond(true, [
-            'transfer_id' => $transferId, 
-            'message' => 'Transfer request submitted successfully. Awaiting admin review.'
+            'transfer_id' => $transferId,
+            'message' => "✅ Transfer request submitted! \"{$parcel['title']}\" will be transferred to {$recipient['full_name']} after admin approval."
         ]);
     }
     
@@ -86,65 +193,45 @@ class TransferController {
             return;
         }
         
+        if ($transfer['status'] !== 'pending') {
+            $this->respond(false, "Transfer is already {$transfer['status']}. Cannot approve.", 400);
+            return;
+        }
+        
         $parcel = $this->parcelModel->findById($transfer['parcel_id']);
         if (!$parcel || !$parcel['document_hash']) {
             $this->respond(false, 'Parcel or document hash not found', 404);
             return;
         }
-
-        // ═══════════════════════════════════════════════
-        // BLOCKCHAIN INTERACTION (REQUIRED)
-        // ═══════════════════════════════════════════════
         
-        // ✅ GET EXISTING WALLETS (already created at registration)
+        // Get wallets
         $fromWallet = $this->userModel->getWalletAddress($transfer['sender_id']);
         $toWallet = $this->userModel->getWalletAddress($transfer['recipient_id']);
         
         if (!$fromWallet || !$toWallet) {
-            // Fallback: generate if missing (should not happen normally)
-            if (!$fromWallet) $fromWallet = $this->generateWalletForUser($transfer['sender_id']);
-            if (!$toWallet) $toWallet = $this->generateWalletForUser($transfer['recipient_id']);
-        }
-        
-        $newOwnerWallet = $toWallet;
-
-        // BLOCKCHAIN TRANSACTION IS REQUIRED
-        if (!$this->blockchain->isEnabled()) {
-            $this->respond(false, '❌ Blockchain is disabled. Cannot approve transfer without blockchain recording.', 500);
+            $this->respond(false, 'One or both users do not have wallet addresses.', 500);
             return;
         }
         
-        // The frontend sends the tx_hash after MetaMask confirms
+        // Check for tx_hash from frontend (MetaMask confirmation)
         $txHash = $data['tx_hash'] ?? null;
         
         if (empty($txHash)) {
-            // Frontend hasn't sent tx_hash yet - return metadata for blockchain call
+            // Return data for blockchain call
             $this->respond(true, [
                 'status' => 'pending_blockchain',
                 'document_hash' => $parcel['document_hash'],
-                'new_owner_wallet' => $newOwnerWallet,
-                'transfer_id' => $data['transfer_id'],
+                'new_owner_wallet' => $toWallet,
+                'transfer_id' => (int)$data['transfer_id'],
                 'message' => 'Blockchain transaction required. Please confirm in MetaMask.'
             ]);
             return;
         }
         
-        // ═══════════════════════════════════════════════
-        // VERIFY BLOCKCHAIN TRANSACTION
-        // ═══════════════════════════════════════════════
-        
-        if (!empty($txHash) && !preg_match('/^0x[a-fA-F0-9]{64}$/', $txHash) && !str_starts_with($txHash, 'already_on_chain')) {
-             $this->respond(false, '❌ Invalid transaction hash format.', 400);
-             return;
-        }
-
-        // ═══════════════════════════════════════════════
-        // NOW APPROVE IN DATABASE
-        // ═══════════════════════════════════════════════
-        
+        // ✅ BLOCKCHAIN TX PROVIDED - NOW SAVE TO DATABASE
         $this->transferModel->approve($data['transfer_id'], $admin['id'], $txHash);
         
-        // Notify the seller
+        // Notify both parties
         $this->notifications->send(
             $transfer['sender_id'],
             'transfer_approved',

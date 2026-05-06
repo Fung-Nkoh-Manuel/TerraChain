@@ -2,7 +2,14 @@
 //  TerraChain v2 — Frontend Application
 // ============================================================
 
-const API_BASE = '/terrachain-v2/api';
+// Detect the correct API path dynamically
+const API_BASE = (function () {
+  // If we're in /public/ folder, go up one level
+  if (window.location.pathname.includes('/public/')) {
+    return '../api';
+  }
+  return '/terrachain-v2/api';
+})();
 
 // ── Toast Notifications ──────────────────────────────
 function toast(message, type = "info") {
@@ -134,9 +141,10 @@ async function api(endpoint, method = "GET", body = null) {
 
   try {
     const res = await fetch(`${API_BASE}${endpoint}`, opts);
-    return await res.json();
+    const data = await res.json();
+    return data;
   } catch (e) {
-    return { success: false, error: "Network error" };
+    return { success: false, error: "Cannot connect to server. Please check your internet connection." };
   }
 }
 
@@ -149,7 +157,7 @@ async function apiUpload(endpoint, formData) {
     });
     return await res.json();
   } catch (e) {
-    return { success: false, error: "Upload failed" };
+    return { success: false, error: "Cannot connect to server. Please try again." };
   }
 }
 
@@ -161,6 +169,7 @@ function initKYCForm() {
   form.addEventListener("submit", async function (e) {
     e.preventDefault();
     const btn = form.querySelector('button[type="submit"]');
+    const originalText = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Submitting...';
 
@@ -168,22 +177,18 @@ function initKYCForm() {
     try {
       const res = await apiUpload("/kyc/submit", formData);
       if (res.success) {
-        toast("KYC submitted successfully! Awaiting verification.", "success");
+        toast("✅ KYC submitted! Awaiting verification.", "success");
         form.reset();
-        document.getElementById("kycStatus").innerHTML = `
-                    <div class="alert alert-info">
-                        <span class="alert-icon">⏳</span>
-                        <div><strong>KYC Under Review</strong>
-                        <p>Your documents are being reviewed.</p></div>
-                    </div>`;
       } else {
-        toast(res.data?.error || res.error || "Submission failed", "error");
+        const serverMsg = typeof res.data === 'string' ? res.data : (res.data?.error || res.error || "KYC submission failed");
+        const cleanMsg = serverMsg.replace(/❌\s*/g, '').replace(/\\n/g, ' ').trim();
+        toast("❌ " + cleanMsg, "error");
       }
     } catch (err) {
-      toast("Network error", "error");
+      toast("❌ Network error. Please try again.", "error");
     } finally {
       btn.disabled = false;
-      btn.innerHTML = "Submit KYC";
+      btn.innerHTML = originalText;
     }
   });
 }
@@ -196,6 +201,7 @@ function initRegistrationForm() {
   form.addEventListener("submit", async function (e) {
     e.preventDefault();
     const btn = form.querySelector('button[type="submit"]');
+    const originalText = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span> Submitting...';
 
@@ -203,16 +209,18 @@ function initRegistrationForm() {
     try {
       const res = await apiUpload("/parcels/submit", formData);
       if (res.success) {
-        toast("Registration submitted! Awaiting admin review.", "success");
+        toast("✅ Registration submitted! Awaiting admin review.", "success");
         form.reset();
       } else {
-        toast(res.data?.error || res.error || "Submission failed", "error");
+        const serverMsg = typeof res.data === 'string' ? res.data : (res.data?.error || res.error || "Submission failed");
+        const cleanMsg = serverMsg.replace(/❌\s*/g, '').replace(/\\n/g, ' ').trim();
+        toast("❌ " + cleanMsg, "error");
       }
     } catch (err) {
-      toast("Network error", "error");
+      toast("❌ Network error. Please try again.", "error");
     } finally {
       btn.disabled = false;
-      btn.innerHTML = "Submit Registration";
+      btn.innerHTML = originalText;
     }
   });
 }
@@ -254,8 +262,8 @@ function renderTransfersTable(transfers) {
                 </thead>
                 <tbody>
                     ${transfers
-                      .map(
-                        (t) => `
+      .map(
+        (t) => `
                         <tr>
                             <td><span class="badge badge-blue">#${t.id}</span></td>
                             <td>${escapeHtml(t.parcel_title || "N/A")}</td>
@@ -264,8 +272,8 @@ function renderTransfersTable(transfers) {
                             <td>${formatDate(t.created_at)}</td>
                         </tr>
                     `,
-                      )
-                      .join("")}
+      )
+      .join("")}
                 </tbody>
             </table>
         </div>
@@ -320,30 +328,77 @@ function openTransferModal(parcelNumber) {
     .getElementById("transferForm")
     .addEventListener("submit", async function (e) {
       e.preventDefault();
-      const formData = new FormData();
-      formData.append("parcel_number", parcelNumber);
-      formData.append(
-        "recipient_email",
-        document.getElementById("recipientEmail").value,
-      );
-      formData.append(
-        "transfer_type",
-        document.getElementById("transferType").value,
-      );
 
+      const parcelNumber = document.getElementById("transferParcelNumber").value;
+      const recipientEmail = document.getElementById("recipientEmail").value.trim();
+      const transferType = document.getElementById("transferType").value;
       const docFile = document.getElementById("supportingDoc").files[0];
-      if (docFile) formData.append("supporting_doc", docFile);
+
+      if (!docFile) {
+        toast("📄 Please upload a supporting document for the transfer.", "warn");
+        return;
+      }
+
+      if (!recipientEmail) {
+        toast("📧 Please enter the recipient's email address.", "warn");
+        return;
+      }
+
+      const btn = this.querySelector('button[type="submit"]');
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Submitting...';
 
       try {
-        const res = await apiUpload("/transfers/request", formData);
-        if (res.success) {
-          toast("Transfer request submitted!", "success");
+        const formData = new FormData();
+        formData.append("parcel_number", parcelNumber);
+        formData.append("recipient_email", recipientEmail);
+        formData.append("transfer_type", transferType);
+        formData.append("supporting_doc", docFile);
+
+        const response = await fetch(API_BASE + "/transfers/request", {
+          method: "POST",
+          body: formData,
+          credentials: "same-origin",
+        });
+
+        const result = await response.json();
+        console.log("Transfer API response:", result); // ✅ DEBUG
+
+        if (result.success) {
+          toast("✅ Transfer request submitted! Awaiting admin review.", "success");
           modal.remove();
         } else {
-          toast(res.data?.error || "Transfer failed", "error");
+          // ✅ Extract error message - handle ALL formats
+          let errorMsg = "Transfer failed";
+
+          if (result.data && typeof result.data === 'string') {
+            errorMsg = result.data;
+          } else if (result.data && result.data.error) {
+            errorMsg = result.data.error;
+          } else if (result.error) {
+            errorMsg = result.error;
+          } else if (result.message) {
+            errorMsg = result.message;
+          }
+
+          // Clean up the message
+          errorMsg = String(errorMsg)
+            .replace(/\\n/g, ' ')
+            .replace(/\\\\n/g, ' ')
+            .replace(/❌\s*/g, '')
+            .replace(/\\u274c/g, '')
+            .trim();
+
+          console.log("Extracted error:", errorMsg); // ✅ DEBUG
+          toast("❌ " + errorMsg, "error");
         }
       } catch (err) {
-        toast("Network error", "error");
+        console.error("Transfer error:", err);
+        toast("❌ Network error. Please try again.", "error");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
       }
     });
 }
@@ -385,8 +440,8 @@ function renderDisputesTable(disputes) {
                 </thead>
                 <tbody>
                     ${disputes
-                      .map(
-                        (d) => `
+      .map(
+        (d) => `
                         <tr>
                             <td><span class="badge badge-blue">#${d.id}</span></td>
                             <td>${escapeHtml(d.parcel_title || "N/A")}</td>
@@ -395,8 +450,8 @@ function renderDisputesTable(disputes) {
                             <td>${formatDate(d.created_at)}</td>
                         </tr>
                     `,
-                      )
-                      .join("")}
+      )
+      .join("")}
                 </tbody>
             </table>
         </div>
