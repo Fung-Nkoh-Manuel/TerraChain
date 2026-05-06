@@ -226,11 +226,13 @@ class ParcelController {
             return;
         }
         
-        // Get or create wallet
-        $ownerWallet = $this->userModel->getWalletAddress($reg['owner_id']);
-        if (!$ownerWallet) {
-            $ownerWallet = $this->generateWalletForUser($reg['owner_id']);
-        }
+    // ✅ GET EXISTING WALLET (already created at registration)
+    $ownerWallet = $this->userModel->getWalletAddress($reg['owner_id']);
+    
+    if (!$ownerWallet) {
+        // Fallback: generate if somehow missing (shouldn't happen)
+        $ownerWallet = $this->generateWalletForUser($reg['owner_id']);
+    }
         
         // Check for tx_hash from frontend
         $txHash = $data['tx_hash'] ?? null;
@@ -288,24 +290,22 @@ class ParcelController {
 
     /**
      * Generate a deterministic wallet address for a user
-     * This creates a unique wallet for each user based on their ID
      */
     private function generateWalletForUser(int $userId): string {
-        // Create a deterministic private key from user ID + system secret
-        $seed = "terrachain_user_{$userId}_" . ($_ENV['WALLET_SECRET'] ?? 'default_secret_change_me');
-        $privateKey = '0x' . hash('sha256', $seed);
+        $secret = defined('WALLET_SECRET') ? WALLET_SECRET : 'terrachain_default_secret_change_in_production';
+        $seed = "terrachain_user_{$userId}_{$secret}";
         
-        // Derive the Ethereum address from the private key
-        // In production, use a proper Ethereum library like web3.php or ethers
-        $address = '0x' . substr(hash('sha256', $privateKey), 0, 40);
+        $hash = hash('sha256', $seed);
+        $address = '0x' . substr($hash, 0, 40);
+        $address = strtolower($address);
         
         // Save to database
         $this->userModel->assignWalletAddress($userId, $address);
         
-        // Log the wallet generation
+        // Log
         $db = Database::getConnection();
         $db->prepare('INSERT INTO audit_log (user_id, action, entity_type, entity_id, notes) VALUES (?, ?, ?, ?, ?)')
-           ->execute([$userId, 'wallet_generated', 'user', $userId, "System-generated wallet: {$address}"]);
+           ->execute([$userId, 'wallet_generated', 'user', $userId, "Auto-generated at registration: {$address}"]);
         
         return $address;
     }

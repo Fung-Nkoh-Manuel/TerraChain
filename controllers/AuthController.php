@@ -55,8 +55,40 @@ class AuthController {
             return;
         }
         
+        // Create user in database
         $userId = $this->userModel->create($data);
-        $this->respond(true, ['user_id' => $userId, 'message' => 'Registration successful. Please login.']);
+        
+        // ✅ GENERATE WALLET IMMEDIATELY AFTER REGISTRATION
+        $walletAddress = $this->generateWalletForUser($userId);
+        
+        error_log("User #{$userId} registered. Wallet: {$walletAddress}");
+        
+        $this->respond(true, [
+            'user_id' => $userId,
+            'message' => 'Registration successful. Please login.'
+        ]);
+    }
+
+    /**
+     * Generate a deterministic wallet address for a user
+     */
+    private function generateWalletForUser(int $userId): string {
+        $secret = defined('WALLET_SECRET') ? WALLET_SECRET : 'terrachain_default_secret_change_in_production';
+        $seed = "terrachain_user_{$userId}_{$secret}";
+        
+        $hash = hash('sha256', $seed);
+        $address = '0x' . substr($hash, 0, 40);
+        $address = strtolower($address);
+        
+        // Save to database
+        $this->userModel->assignWalletAddress($userId, $address);
+        
+        // Log
+        $db = Database::getConnection();
+        $db->prepare('INSERT INTO audit_log (user_id, action, entity_type, entity_id, notes) VALUES (?, ?, ?, ?, ?)')
+           ->execute([$userId, 'wallet_generated', 'user', $userId, "Auto-generated at registration: {$address}"]);
+        
+        return $address;
     }
     
     public function logout(): void {

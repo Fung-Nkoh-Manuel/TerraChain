@@ -158,8 +158,11 @@ class DisputeController {
 
         if ($data['outcome'] === 'ownership_changed' && $this->blockchain->isEnabled()) {
             
+            // ✅ GET EXISTING WALLET
             $newOwnerWallet = $this->userModel->getWalletAddress($newOwnerId);
+            
             if (!$newOwnerWallet) {
+                // Fallback: generate if missing
                 $newOwnerWallet = $this->generateWalletForUser($newOwnerId);
             }
 
@@ -246,16 +249,20 @@ class DisputeController {
      * Generate a deterministic wallet address for a user
      */
     private function generateWalletForUser(int $userId): string {
-        $seed = "terrachain_user_{$userId}_" . ($_ENV['WALLET_SECRET'] ?? 'default_secret_change_me');
-        $privateKey = '0x' . hash('sha256', $seed);
+        $secret = defined('WALLET_SECRET') ? WALLET_SECRET : 'terrachain_default_secret_change_in_production';
+        $seed = "terrachain_user_{$userId}_{$secret}";
         
-        $address = '0x' . substr(hash('sha256', $privateKey), 0, 40);
+        $hash = hash('sha256', $seed);
+        $address = '0x' . substr($hash, 0, 40);
+        $address = strtolower($address);
         
+        // Save to database
         $this->userModel->assignWalletAddress($userId, $address);
         
+        // Log
         $db = Database::getConnection();
         $db->prepare('INSERT INTO audit_log (user_id, action, entity_type, entity_id, notes) VALUES (?, ?, ?, ?, ?)')
-           ->execute([$userId, 'wallet_generated', 'user', $userId, "System-generated wallet: {$address}"]);
+           ->execute([$userId, 'wallet_generated', 'user', $userId, "Auto-generated at registration: {$address}"]);
         
         return $address;
     }

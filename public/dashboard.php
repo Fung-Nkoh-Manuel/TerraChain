@@ -753,7 +753,6 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
             }
             
             // Form submit handler
-            // Form submit handler
             const regForm = document.getElementById('registrationForm');
             if (regForm) {
                 regForm.addEventListener('submit', async function(e) {
@@ -769,12 +768,6 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                     
                     const formData = new FormData(this);
                     
-                    // ✅ Debug: Log what's being sent
-                    console.log('Submitting registration with:');
-                    for (let [key, value] of formData.entries()) {
-                        console.log(`  ${key}:`, value instanceof File ? `File: ${value.name}` : value);
-                    }
-                    
                     try {
                         toast('Submitting registration...', 'info');
                         
@@ -782,32 +775,53 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                             method: 'POST',
                             body: formData,
                             credentials: 'same-origin'
-                            // ✅ DON'T set Content-Type header! Browser sets it automatically with boundary for FormData
                         });
                         
                         const data = await res.json();
-                        console.log('Registration Response:', data);
+                        console.log('Registration Response:', JSON.stringify(data, null, 2));
                         
                         if (data.success) {
-                            toast('Registration submitted! Awaiting admin review.', 'success');
+                            toast('✅ Registration submitted! Awaiting admin review.', 'success');
                             this.reset();
-                            document.getElementById('parseStatus').style.display = 'none';
+                            
                             // Reset file text
                             const fileText = document.getElementById('regFileText');
                             if (fileText) {
                                 fileText.innerHTML = `
                                     <div style="font-size:32px;">📄</div>
                                     <p>Drop documents or <span>click to browse</span></p>
-                                    <p style="font-size:12px;color:var(--text3);">PDF, JPG, PNG — text will be auto-extracted</p>
+                                    <p style="font-size:12px;color:var(--text3);">PDF, JPG, PNG</p>
                                 `;
                             }
+                            document.getElementById('parseStatus').style.display = 'none';
+                            
                         } else {
-                            const errorMsg = data.data?.error || data.error || 'Registration failed';
-                            toast(errorMsg, 'error');
+                            // Extract error message
+                            let errorMsg = 'Registration failed';
+                            if (typeof data.data === 'string') {
+                                errorMsg = data.data;
+                            } else if (data.data?.error) {
+                                errorMsg = data.data.error;
+                            } else if (data.error) {
+                                errorMsg = data.error;
+                            }
+                            
+                            // Show error
+                            toast('❌ ' + errorMsg, 'error');
+                            
+                            // Also show in status div
+                            const statusDiv = document.getElementById('parseStatus');
+                            if (statusDiv) {
+                                statusDiv.style.display = 'block';
+                                statusDiv.innerHTML = `
+                                    <div style="color:#ff3b5c;font-weight:600;">❌ Registration Failed</div>
+                                    <div style="margin-top:8px;color:var(--text2);line-height:1.6;white-space:pre-line;">${escapeHtml(errorMsg)}</div>
+                                `;
+                            }
                         }
                     } catch(err) {
                         console.error('Registration Error:', err);
-                        toast('Network error. Please try again.', 'error');
+                        toast('❌ Network error. Please try again.', 'error');
                     } finally {
                         btn.disabled = false;
                         btnText.style.display = '';
