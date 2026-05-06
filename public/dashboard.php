@@ -580,7 +580,16 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                                 showSection('kyc');
                             }, 2000);
                         } else {
-                            toast(data.data?.error || data.error || 'KYC submission failed', 'error');
+                            let errorMsg = 'KYC submission failed';
+                            if (typeof data.data === 'string') {
+                                errorMsg = data.data;
+                            } else if (data.data?.error) {
+                                errorMsg = data.data.error;
+                            } else if (data.error) {
+                                errorMsg = data.error;
+                            }
+                            errorMsg = String(errorMsg).replace(/\\n/g, ' ').replace(/❌\s*/g, '').trim();
+                            toast('❌ ' + errorMsg, 'error');
                         }
                     } catch(err) {
                         console.error('KYC Error:', err);
@@ -805,6 +814,8 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                             } else if (data.error) {
                                 errorMsg = data.error;
                             }
+                            
+                            errorMsg = String(errorMsg).replace(/\\n/g, ' ').replace(/❌\s*/g, '').trim();
                             
                             // Show error
                             toast('❌ ' + errorMsg, 'error');

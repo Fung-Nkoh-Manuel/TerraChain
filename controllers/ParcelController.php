@@ -56,39 +56,30 @@ class ParcelController {
             }
         }
         
-        // Process documents
-        $documentHash = null;
-        $ipfsHash = null;
-        $hashes = [];
+        // ═══════════════════════════════════════════════
+        // STEP 1: Compute hashes from temp files (FAST)
+        // ═══════════════════════════════════════════════
         
+        $hashes = [];
         if (!empty($_FILES['documents'])) {
             $files = $this->normalizeFilesArray($_FILES['documents']);
             foreach ($files as $file) {
                 if ($file['error'] !== UPLOAD_ERR_OK) continue;
-                try {
-                    $result = $this->docService->processUpload($file);
-                    $hashes[] = $result['sha256'];
-                    if (!$ipfsHash && !empty($result['ipfs_hash'])) {
-                        $ipfsHash = $result['ipfs_hash'];
-                    }
-                } catch (Exception $e) {
-                    error_log('Upload error: ' . $e->getMessage());
-                }
-            }
-            if (!empty($hashes)) {
-                $documentHash = $this->docService->combineHashes($hashes);
+                $hash = hash_file('sha256', $file['tmp_name']);
+                $hashes[] = $hash;
             }
         }
         
-        // ═══════════════════════════════════════════════════
-        // VALIDATION CHECKS (BEFORE SAVING)
-        // ═══════════════════════════════════════════════════
+        $documentHash = !empty($hashes) ? $this->docService->combineHashes($hashes) : null;
+        
+        // ═══════════════════════════════════════════════
+        // STEP 2: Check duplicates BEFORE IPFS upload
+        // ═══════════════════════════════════════════════
         
         $db = Database::getConnection();
         
-        // Check 1: Duplicate document hash
         if (!empty($documentHash)) {
-            $dupDoc = $db->prepare('SELECT id, parcel_number, title FROM parcels WHERE document_hash = ? AND status IN ("owned", "pending", "transferred")');
+            $dupDoc = $db->prepare("SELECT id, parcel_number, title FROM parcels WHERE document_hash = ? AND status IN ('owned', 'pending', 'transferred')");
             $dupDoc->execute([$documentHash]);
             $dup = $dupDoc->fetch();
             if ($dup) {
@@ -97,7 +88,7 @@ class ParcelController {
             }
         }
         
-        // Check 2: Duplicate location address
+        // Check duplicate location address
         if (!empty($location)) {
             $dupLoc = $db->prepare('SELECT id, parcel_number, title FROM parcels WHERE location_address = ? AND status IN ("owned", "pending", "transferred")');
             $dupLoc->execute([$location]);
@@ -105,6 +96,26 @@ class ParcelController {
             if ($dupLocation) {
                 $this->respond(false, "❌ DUPLICATE LOCATION: \"{$location}\" is already registered under parcel {$dupLocation['parcel_number']} - \"{$dupLocation['title']}\".\n\nThis address is already in the system.", 409);
                 return;
+            }
+        }
+        
+        // ═══════════════════════════════════════════════
+        // STEP 3: No duplicates — NOW upload to IPFS
+        // ═══════════════════════════════════════════════
+        
+        $ipfsHash = null;
+        if (!empty($_FILES['documents'])) {
+            $files = $this->normalizeFilesArray($_FILES['documents']);
+            foreach ($files as $file) {
+                if ($file['error'] !== UPLOAD_ERR_OK) continue;
+                try {
+                    $result = $this->docService->processUpload($file, true);
+                    if (!$ipfsHash && !empty($result['ipfs_hash'])) {
+                        $ipfsHash = $result['ipfs_hash'];
+                    }
+                } catch (Exception $e) {
+                    error_log('Upload error: ' . $e->getMessage());
+                }
             }
         }
         

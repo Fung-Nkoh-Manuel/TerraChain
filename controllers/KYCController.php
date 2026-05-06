@@ -31,35 +31,26 @@ class KYCController {
             return;
         }
         
-        // Process uploaded documents
-        $allHashes = [];
-        $ipfsHash = null;
-        
         if (empty($_FILES['documents'])) {
             $this->respond(false, 'KYC documents required', 400);
             return;
         }
         
         $files = $this->normalizeFilesArray($_FILES['documents']);
+        $db = Database::getConnection();
+        
+        // ═══════════════════════════════════════════════
+        // STEP 1: Compute hashes FIRST (before IPFS upload)
+        // ═══════════════════════════════════════════════
+        
+        $allHashes = [];
         
         foreach ($files as $file) {
             if ($file['error'] !== UPLOAD_ERR_OK) continue;
             
-            $fileInfo = [
-                'name' => $file['name'],
-                'tmp_name' => $file['tmp_name'],
-                'size' => $file['size'],
-            ];
-            
-            try {
-                $result = $this->docService->processUpload($fileInfo, true);
-                $allHashes[] = $result['sha256'];
-                if (!$ipfsHash && !empty($result['ipfs_hash'])) {
-                    $ipfsHash = $result['ipfs_hash'];
-                }
-            } catch (Exception $e) {
-                error_log('KYC upload error: ' . $e->getMessage());
-            }
+            // Compute SHA-256 hash from the temp file (no IPFS yet)
+            $hash = hash_file('sha256', $file['tmp_name']);
+            $allHashes[] = $hash;
         }
         
         if (empty($allHashes)) {
@@ -68,29 +59,27 @@ class KYCController {
         }
         
         $documentHash = $this->docService->combineHashes($allHashes);
-        $ipfsHash = $ipfsHash ?? '';
         
         // ═══════════════════════════════════════════════
-        // ✅ CHECK: Has this document been used by another user?
+        // STEP 2: Check for duplicates (BEFORE IPFS)
         // ═══════════════════════════════════════════════
-        $db = Database::getConnection();
         
-        // Check individual hashes AND combined hash
+        // Check each individual hash
         foreach ($allHashes as $hash) {
-            $stmt = $db->prepare('
+            $stmt = $db->prepare("
                 SELECT k.id, u.full_name, u.email 
                 FROM kyc_records k 
                 JOIN users u ON k.user_id = u.id 
                 WHERE k.document_hash LIKE ? 
                 AND k.user_id != ?
-            ');
+            ");
             $stmt->execute(['%' . $hash . '%', $user['id']]);
             $dup = $stmt->fetch();
             
             if ($dup) {
                 $this->respond(false, 
-                    "❌ DUPLICATE DOCUMENT: This document (or part of it) was already submitted by \"{$dup['full_name']}\" ({$dup['email']}).\n\n" .
-                    "The same identity document cannot be used by multiple people. If you believe this is an error, please contact an administrator.",
+                    "❌ DUPLICATE DOCUMENT: This document was already submitted by \"{$dup['full_name']}\" ({$dup['email']}).\n\n" .
+                    "The same identity document cannot be used by multiple people. Please upload a different document.",
                     409
                 );
                 return;
@@ -98,13 +87,13 @@ class KYCController {
         }
         
         // Also check the combined hash
-        $stmt = $db->prepare('
+        $stmt = $db->prepare("
             SELECT k.id, u.full_name, u.email 
             FROM kyc_records k 
             JOIN users u ON k.user_id = u.id 
             WHERE k.document_hash = ? 
             AND k.user_id != ?
-        ');
+        ");
         $stmt->execute([$documentHash, $user['id']]);
         $dupCombined = $stmt->fetch();
         
@@ -118,12 +107,39 @@ class KYCController {
         }
         
         // ═══════════════════════════════════════════════
-        // ALL CHECKS PASSED - SUBMIT KYC
+        // STEP 3: No duplicates found — NOW upload to IPFS
+        // ═══════════════════════════════════════════════
+        
+        $ipfsHash = null;
+        
+        foreach ($files as $file) {
+            if ($file['error'] !== UPLOAD_ERR_OK) continue;
+            
+            $fileInfo = [
+                'name' => $file['name'],
+                'tmp_name' => $file['tmp_name'],
+                'size' => $file['size'],
+            ];
+            
+            try {
+                $result = $this->docService->processUpload($fileInfo, true);
+                if (!$ipfsHash && !empty($result['ipfs_hash'])) {
+                    $ipfsHash = $result['ipfs_hash'];
+                }
+            } catch (Exception $e) {
+                error_log('IPFS upload error: ' . $e->getMessage());
+            }
+        }
+        
+        $ipfsHash = $ipfsHash ?? '';
+        
+        // ═══════════════════════════════════════════════
+        // STEP 4: Save KYC record
         // ═══════════════════════════════════════════════
         
         $kycId = $this->kycModel->submit($user['id'], $documentHash, $ipfsHash);
         
-        // Update user profile if provided
+        // Update profile if provided
         $inputData = $_POST;
         if (!empty($inputData['full_name']) || !empty($inputData['national_id'])) {
             $this->userModel->updateProfile($user['id'], [
@@ -138,14 +154,14 @@ class KYCController {
         $this->notifications->sendToAdmins(
             'kyc_submitted',
             'New KYC Submission',
-            "User {$user['full_name']} ({$user['email']}) submitted KYC documents for verification.",
+            "User {$user['full_name']} ({$user['email']}) submitted KYC documents.",
             $kycId,
             'kyc'
         );
         
         $this->respond(true, [
             'kyc_id' => $kycId,
-            'message' => '✅ KYC documents submitted successfully. Awaiting admin verification.',
+            'message' => '✅ KYC submitted successfully. Awaiting admin verification.',
             'status' => 'pending',
             'ipfs_uploaded' => !empty($ipfsHash)
         ]);
