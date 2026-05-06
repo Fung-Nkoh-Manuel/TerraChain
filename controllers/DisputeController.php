@@ -25,81 +25,100 @@ class DisputeController {
      */
     public function file(): void {
         $user = $this->auth->requireAuth();
-        $data = json_decode(file_get_contents('php://input'), true);
         
-        if (empty($data['parcel_number']) || empty($data['description'])) {
-            $this->respond(false, 'Parcel number and description required', 400);
+        // Read from JSON or FormData
+        $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+        
+        if (strpos($contentType, 'application/json') !== false) {
+            $inputData = json_decode(file_get_contents('php://input'), true) ?? [];
+        } else {
+            $inputData = $_POST;
+        }
+        
+        $parcelNumber = trim($inputData['parcel_number'] ?? '');
+        $disputeType = $inputData['dispute_type'] ?? 'ownership';
+        $description = trim($inputData['description'] ?? '');
+        $respondentEmail = trim($inputData['respondent_email'] ?? '');
+        
+        // Validate
+        if (empty($parcelNumber)) {
+            $this->respond(false, 'Parcel number is required.', 400);
+            return;
+        }
+        if (empty($description)) {
+            $this->respond(false, 'Description is required.', 400);
             return;
         }
         
-        $parcel = $this->parcelModel->findByNumber($data['parcel_number']);
+        // Find parcel
+        $parcel = $this->parcelModel->findByNumber($parcelNumber);
         if (!$parcel) {
-            $this->respond(false, 'Parcel not found', 404);
+            $this->respond(false, "Parcel \"{$parcelNumber}\" not found.", 404);
             return;
+        }
+        
+        // Find respondent if provided
+        $respondentId = null;
+        if (!empty($respondentEmail)) {
+            $respondent = $this->userModel->findByEmail($respondentEmail);
+            if ($respondent && $respondent['id'] == $user['id']) {
+                $this->respond(false, 'You cannot file a dispute against yourself.', 400);
+                return;
+            }
+            $respondentId = $respondent ? $respondent['id'] : null;
         }
         
         // Process evidence
         $evidenceHash = null;
-        if (!empty($_FILES['evidence'])) {
-            $fileInfo = [
-                'name' => $_FILES['evidence']['name'],
-                'tmp_name' => $_FILES['evidence']['tmp_name'],
-                'size' => $_FILES['evidence']['size'],
-            ];
-            $result = $this->docService->processUpload($fileInfo);
-            $evidenceHash = $result['ipfs_hash'];
+        if (!empty($_FILES['evidence']) && $_FILES['evidence']['error'] === UPLOAD_ERR_OK) {
+            try {
+                $fileInfo = [
+                    'name' => $_FILES['evidence']['name'],
+                    'tmp_name' => $_FILES['evidence']['tmp_name'],
+                    'size' => $_FILES['evidence']['size'],
+                ];
+                $result = $this->docService->processUpload($fileInfo);
+                $evidenceHash = $result['ipfs_hash'];
+            } catch (Exception $e) {
+                $this->respond(false, 'Failed to upload evidence: ' . $e->getMessage(), 400);
+                return;
+            }
         }
         
-        // Find respondent
-        $respondentId = null;
-        if (!empty($data['respondent_email'])) {
-            $respondent = $this->userModel->findByEmail($data['respondent_email']);
-            $respondentId = $respondent ? $respondent['id'] : null;
-        }
-        
+        // Create dispute
         $disputeId = $this->disputeModel->create([
             'parcel_id' => $parcel['id'],
             'complainant_id' => $user['id'],
             'respondent_id' => $respondentId,
-            'dispute_type' => $data['dispute_type'] ?? 'ownership',
-            'description' => $data['description'],
+            'dispute_type' => $disputeType,
+            'description' => $description,
             'evidence_ipfs_hash' => $evidenceHash
         ]);
         
-        // ✅ NOTIFY ADMINS
+        // Notify admins
         $this->notifications->sendToAdmins(
             'dispute_filed',
             '⚖️ New Dispute Filed',
-            "Dispute filed for parcel \"{$parcel['title']}\" ({$parcel['parcel_number']}) by {$user['full_name']}.",
+            "Dispute filed for parcel \"{$parcel['title']}\" ({$parcelNumber}) by {$user['full_name']}.",
             $disputeId,
             'dispute'
         );
         
-        // ✅ NOTIFY RESPONDENT (if specified)
+        // Notify respondent
         if ($respondentId) {
             $this->notifications->send(
                 $respondentId,
                 'dispute_filed_against',
                 '⚖️ Dispute Filed Against You',
-                "A dispute has been filed against you regarding parcel \"{$parcel['title']}\" ({$parcel['parcel_number']}).",
+                "A dispute has been filed against you regarding parcel \"{$parcel['title']}\".",
                 $disputeId,
                 'dispute'
             );
         }
         
-        // ✅ NOTIFY COMPLAINANT (confirmation)
-        $this->notifications->send(
-            $user['id'],
-            'dispute_filed_confirmation',
-            '⚖️ Dispute Filed',
-            "Your dispute regarding parcel \"{$parcel['title']}\" ({$parcel['parcel_number']}) has been filed. An admin will review it.",
-            $disputeId,
-            'dispute'
-        );
-        
         $this->respond(true, [
             'dispute_id' => $disputeId,
-            'message' => 'Dispute filed successfully. Parcel has been flagged as disputed.'
+            'message' => '✅ Dispute filed successfully. Parcel has been flagged as disputed. An admin will review your case.'
         ]);
     }
     

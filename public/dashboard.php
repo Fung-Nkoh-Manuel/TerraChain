@@ -641,13 +641,22 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
         }
 
         function renderDisputes(el, disputes) {
+            // Always show the "File New Dispute" button at the top
+            const fileButton = `
+                <div style="margin-bottom:16px;">
+                    <button class="btn btn-primary" onclick="openDisputeModal()">
+                        ⚖️ File New Dispute
+                    </button>
+                </div>`;
+            
             if (!disputes || disputes.length === 0) {
                 el.innerHTML = `
                     <div class="card">
-                        <div class="card-header"><h2>My Disputes</h2></div>
+                        <div class="card-header"><h2>Disputes</h2></div>
+                        ${fileButton}
                         <div class="empty-state">
                             <div class="empty-icon">⚖️</div>
-                            <p>No disputes filed</p>
+                            <p>No disputes filed yet</p>
                         </div>
                     </div>`;
                 return;
@@ -655,7 +664,8 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
             
             el.innerHTML = `
                 <div class="card">
-                    <div class="card-header"><h2>My Disputes</h2></div>
+                    <div class="card-header"><h2>Disputes</h2></div>
+                    ${fileButton}
                     <div class="table-wrapper">
                         <table>
                             <thead>
@@ -675,6 +685,157 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                         </table>
                     </div>
                 </div>`;
+        }
+
+        function openDisputeModal() {
+            const existing = document.querySelector('.modal-overlay');
+            if (existing) existing.remove();
+
+            const modal = document.createElement("div");
+            modal.className = "modal-overlay";
+            modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000;";
+            modal.innerHTML = `
+                <div class="modal" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:550px;width:90%;max-height:85vh;overflow-y:auto;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                        <h3 style="font-family:'Syne',sans-serif;">⚖️ File a Dispute</h3>
+                        <button onclick="this.closest('.modal-overlay').remove()" style="background:none;border:none;color:var(--text3);font-size:22px;cursor:pointer;">✕</button>
+                    </div>
+                    <form id="disputeForm">
+                        <div class="form-group">
+                            <label>Parcel Number *</label>
+                            <input type="text" id="disputeParcelNumber" required placeholder="e.g. TC-ABC123-XYZ">
+                            <small style="color:var(--text3);">Enter the parcel number you want to dispute</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Dispute Type *</label>
+                            <select id="disputeType" required>
+                                <option value="">Select type...</option>
+                                <option value="ownership">Ownership Dispute</option>
+                                <option value="boundary">Boundary Dispute</option>
+                                <option value="fraud">Fraud / Forgery</option>
+                                <option value="transfer">Unauthorized Transfer</option>
+                                <option value="public_land">Public Land Claim</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Respondent Email (optional)</label>
+                            <input type="email" id="disputeRespondentEmail" placeholder="person@example.com">
+                            <small style="color:var(--text3);">Email of the person you're disputing against</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Description *</label>
+                            <textarea id="disputeDescription" required rows="4" placeholder="Describe your dispute in detail. Include relevant facts, dates, and why you believe there is an issue..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Evidence Document (optional)</label>
+                            <input type="file" id="disputeEvidence" accept=".pdf,.jpg,.jpeg,.png">
+                            <small style="color:var(--text3);">Upload any supporting evidence</small>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-full" style="margin-top:16px;">
+                            <span class="btn-text">⚖️ File Dispute</span>
+                            <span class="spinner" style="display:none;"></span>
+                        </button>
+                    </form>
+                    <div id="disputeStatus" style="margin-top:12px;font-size:13px;"></div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            modal.addEventListener("click", function (e) {
+                if (e.target === modal) modal.remove();
+            });
+
+            document.getElementById("disputeForm").addEventListener("submit", async function (e) {
+                e.preventDefault();
+
+                const parcelNumber = document.getElementById("disputeParcelNumber").value.trim();
+                const disputeType = document.getElementById("disputeType").value;
+                const respondentEmail = document.getElementById("disputeRespondentEmail").value.trim();
+                const description = document.getElementById("disputeDescription").value.trim();
+                const evidenceFile = document.getElementById("disputeEvidence").files[0];
+
+                if (!parcelNumber) {
+                    toast("Please enter a parcel number.", "warn");
+                    return;
+                }
+                if (!disputeType) {
+                    toast("Please select a dispute type.", "warn");
+                    return;
+                }
+                if (!description) {
+                    toast("Please describe your dispute.", "warn");
+                    return;
+                }
+
+                const btn = this.querySelector('button[type="submit"]');
+                const btnText = btn.querySelector('.btn-text');
+                const spinner = btn.querySelector('.spinner');
+                btn.disabled = true;
+                if (btnText) btnText.style.display = 'none';
+                if (spinner) spinner.style.display = 'inline-block';
+
+                try {
+                    if (evidenceFile) {
+                        // Has evidence file - use FormData
+                        const formData = new FormData();
+                        formData.append("parcel_number", parcelNumber);
+                        formData.append("dispute_type", disputeType);
+                        formData.append("description", description);
+                        if (respondentEmail) formData.append("respondent_email", respondentEmail);
+                        formData.append("evidence", evidenceFile);
+
+                        const res = await fetch('../api/disputes/file', {
+                            method: 'POST',
+                            body: formData,
+                            credentials: 'same-origin'
+                        });
+                        const data = await res.json();
+                        handleDisputeResponse(data, modal);
+                    } else {
+                        // No file - send as JSON
+                        const res = await fetch('../api/disputes/file', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                parcel_number: parcelNumber,
+                                dispute_type: disputeType,
+                                description: description,
+                                respondent_email: respondentEmail || null
+                            }),
+                            credentials: 'same-origin'
+                        });
+                        const data = await res.json();
+                        handleDisputeResponse(data, modal);
+                    }
+                } catch (err) {
+                    console.error("Dispute error:", err);
+                    toast("❌ Network error. Please try again.", "error");
+                } finally {
+                    btn.disabled = false;
+                    if (btnText) btnText.style.display = '';
+                    if (spinner) spinner.style.display = 'none';
+                }
+            });
+        }
+
+        function handleDisputeResponse(data, modal) {
+            if (data.success) {
+                toast("✅ Dispute filed successfully! An admin will review it.", "success");
+                modal.remove();
+                // Reload disputes section
+                setTimeout(() => {
+                    const el = document.getElementById('section-disputes');
+                    if (el) {
+                        el.dataset.loaded = 'false';
+                        showSection('disputes');
+                    }
+                }, 1500);
+            } else {
+                let msg = typeof data.data === 'string' ? data.data : (data.data?.error || data.error || "Dispute filing failed");
+                msg = String(msg).replace(/\\n/g, ' ').replace(/❌\s*/g, '').trim();
+                toast("❌ " + msg, "error");
+            }
         }
 
         async function loadRegistrationForm(el) {
