@@ -455,6 +455,7 @@ $notifications = $notifService->getUserNotifications($admin['id']);
     </div>
     
     <script src="assets/js/admin.js"></script>
+    </script>
 </body>
 </html>
 

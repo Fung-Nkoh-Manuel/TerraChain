@@ -22,7 +22,6 @@ class DisputeController {
     
     /**
      * POST /api/disputes/file
-     * User files a dispute (off-chain)
      */
     public function file(): void {
         $user = $this->auth->requireAuth();
@@ -30,11 +29,13 @@ class DisputeController {
         
         if (empty($data['parcel_number']) || empty($data['description'])) {
             $this->respond(false, 'Parcel number and description required', 400);
+            return;
         }
         
         $parcel = $this->parcelModel->findByNumber($data['parcel_number']);
         if (!$parcel) {
             $this->respond(false, 'Parcel not found', 404);
+            return;
         }
         
         // Process evidence
@@ -49,7 +50,7 @@ class DisputeController {
             $evidenceHash = $result['ipfs_hash'];
         }
         
-        // Find respondent if specified
+        // Find respondent
         $respondentId = null;
         if (!empty($data['respondent_email'])) {
             $respondent = $this->userModel->findByEmail($data['respondent_email']);
@@ -111,6 +112,7 @@ class DisputeController {
         
         if (empty($data['dispute_id']) || empty($data['vote'])) {
             $this->respond(false, 'Dispute ID and vote required', 400);
+            return;
         }
         
         $this->disputeModel->addVote($data['dispute_id'], $voter['id'], $data['vote'], $data['notes'] ?? null);
@@ -119,7 +121,7 @@ class DisputeController {
     }
     
     /**
-     * POST /api/disputes/resolve (Admin - may trigger blockchain)
+     * POST /api/disputes/resolve (Admin - BLOCKCHAIN REQUIRED if ownership changes)
      */
     public function resolve(): void {
         $admin = $this->auth->requireAdmin();
@@ -135,34 +137,42 @@ class DisputeController {
             $this->respond(false, 'Dispute not found', 404);
             return;
         }
+
+        $parcel = $this->parcelModel->findById($dispute['parcel_id']);
+        if (!$parcel || !$parcel['document_hash']) {
+             $this->respond(false, 'Parcel or document hash not found', 404);
+             return;
+        }
+
+        // ═══════════════════════════════════════════════
+        // BLOCKCHAIN INTERACTION (IF OWNERSHIP CHANGES)
+        // ═══════════════════════════════════════════════
         
-        // Blockchain interaction if ownership changes
-        $txHash = null;
-        $newOwnerId = null;
-        
+        $txHash = $data['tx_hash'] ?? null;
+        $newOwnerId = $dispute['complainant_id']; // Default to complainant
+
+        if (!empty($data['new_owner_email'])) {
+            $newOwner = $this->userModel->findByEmail($data['new_owner_email']);
+            if ($newOwner) $newOwnerId = $newOwner['id'];
+        }
+
         if ($data['outcome'] === 'ownership_changed' && $this->blockchain->isEnabled()) {
-            $parcel = $this->parcelModel->findById($dispute['parcel_id']);
-            $newOwnerId = $dispute['complainant_id'];
             
-            if (!empty($data['new_owner_email'])) {
-                $newOwner = $this->userModel->findByEmail($data['new_owner_email']);
-                if ($newOwner) $newOwnerId = $newOwner['id'];
+            $newOwnerWallet = $this->userModel->getWalletAddress($newOwnerId);
+            if (!$newOwnerWallet) {
+                $newOwnerWallet = $this->generateWalletForUser($newOwnerId);
             }
-            
-            if ($parcel && $parcel['document_hash']) {
-                $newOwnerWallet = $this->userModel->getWalletAddress($newOwnerId);
-                if (!$newOwnerWallet) {
-                    $newOwnerWallet = $this->generateWalletForUser($newOwnerId);
-                }
-                
-                $result = $this->blockchain->updateOwnershipDueToDispute(
-                    $parcel['document_hash'],
-                    $newOwnerWallet,
-                    $data['notes'] ?? 'Dispute resolution'
-                );
-                if ($result['success']) {
-                    $txHash = $result['tx_hash'];
-                }
+
+            if (empty($txHash)) {
+                // Return metadata for blockchain call
+                $this->respond(true, [
+                    'status' => 'pending_blockchain',
+                    'document_hash' => $parcel['document_hash'],
+                    'new_owner_wallet' => $newOwnerWallet,
+                    'dispute_id' => $data['dispute_id'],
+                    'message' => 'Blockchain transaction required for ownership change.'
+                ]);
+                return;
             }
         }
         
@@ -177,7 +187,7 @@ class DisputeController {
             $newOwnerId
         );
         
-        // ✅ NOTIFY COMPLAINANT
+        // NOTIFY COMPLAINANT
         $this->notifications->send(
             $dispute['complainant_id'],
             'dispute_resolved',
@@ -187,7 +197,7 @@ class DisputeController {
             'dispute'
         );
         
-        // ✅ NOTIFY RESPONDENT (if exists)
+        // NOTIFY RESPONDENT (if exists)
         if ($dispute['respondent_id']) {
             $this->notifications->send(
                 $dispute['respondent_id'],
@@ -199,7 +209,7 @@ class DisputeController {
             );
         }
         
-        // ✅ NOTIFY OTHER ADMINS
+        // NOTIFY OTHER ADMINS
         $this->notifications->sendToAdmins(
             'dispute_resolved_admin',
             'Dispute Resolved',
@@ -208,9 +218,8 @@ class DisputeController {
             'dispute'
         );
         
-        // ✅ If ownership changed, notify new owner
+        // If ownership changed, notify new owner
         if ($data['outcome'] === 'ownership_changed' && $newOwnerId) {
-            $parcel = $this->parcelModel->findById($dispute['parcel_id']);
             $this->notifications->send(
                 $newOwnerId,
                 'ownership_updated_dispute',
@@ -221,10 +230,34 @@ class DisputeController {
             );
         }
         
+        // Log audit
+        $db = Database::getConnection();
+        $db->prepare('INSERT INTO audit_log (user_id, action, entity_type, entity_id, notes, blockchain_tx) VALUES (?, ?, ?, ?, ?, ?)')
+           ->execute([$admin['id'], 'dispute_resolved', 'dispute', $dispute['id'], "Outcome: {$data['outcome']}", $txHash]);
+        
         $this->respond(true, [
-            'message' => 'Dispute resolved successfully',
-            'blockchain_tx' => $txHash
+            'message' => '✅ Dispute resolved successfully' . ($txHash ? ' and recorded on blockchain' : ''),
+            'blockchain_tx' => $txHash,
+            'dispute_id' => $dispute['id']
         ]);
+    }
+
+    /**
+     * Generate a deterministic wallet address for a user
+     */
+    private function generateWalletForUser(int $userId): string {
+        $seed = "terrachain_user_{$userId}_" . ($_ENV['WALLET_SECRET'] ?? 'default_secret_change_me');
+        $privateKey = '0x' . hash('sha256', $seed);
+        
+        $address = '0x' . substr(hash('sha256', $privateKey), 0, 40);
+        
+        $this->userModel->assignWalletAddress($userId, $address);
+        
+        $db = Database::getConnection();
+        $db->prepare('INSERT INTO audit_log (user_id, action, entity_type, entity_id, notes) VALUES (?, ?, ?, ?, ?)')
+           ->execute([$userId, 'wallet_generated', 'user', $userId, "System-generated wallet: {$address}"]);
+        
+        return $address;
     }
     
     /**
@@ -232,8 +265,12 @@ class DisputeController {
      */
     public function all(): void {
         $user = $this->auth->requireAuth();
-        $disputes = $this->disputeModel->getAll();
-        $this->respond(true, $disputes);
+        try {
+            $disputes = $this->disputeModel->getAll();
+            $this->respond(true, $disputes);
+        } catch (Exception $e) {
+            $this->respond(false, 'Error: ' . $e->getMessage(), 500);
+        }
     }
     
     private function respond(bool $success, $data, int $code = 200): void {

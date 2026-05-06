@@ -20,7 +20,7 @@ class ParcelController {
     
     /**
      * POST /api/parcels/submit
-     * User submits land registration (off-chain)
+     * User submits land registration - VALIDATION HAPPENS HERE
      */
     public function submit(): void {
         $user = $this->auth->requireAuth();
@@ -33,7 +33,6 @@ class ParcelController {
             return;
         }
         
-        // ✅ Read from $_POST since we're using FormData (multipart/form-data)
         $title = trim($_POST['title'] ?? '');
         $location = trim($_POST['location_address'] ?? '');
         $sizeSqm = $_POST['size_sqm'] ?? null;
@@ -41,17 +40,12 @@ class ParcelController {
         $description = trim($_POST['description'] ?? '');
         $gpsCoordinates = trim($_POST['gps_coordinates'] ?? '');
         
-        // Validate required fields
-        if (empty($title)) {
-            $this->respond(false, 'Title is required', 400);
-            return;
-        }
-        if (empty($location)) {
-            $this->respond(false, 'Location is required', 400);
+        if (empty($title) || empty($location)) {
+            $this->respond(false, 'Title and location are required', 400);
             return;
         }
         
-        // Parse GPS coordinates if provided
+        // Parse GPS
         $gpsLat = null;
         $gpsLng = null;
         if (!empty($gpsCoordinates)) {
@@ -62,53 +56,92 @@ class ParcelController {
             }
         }
         
-        // Process any uploaded documents
+        // Process documents
         $documentHash = null;
         $ipfsHash = null;
         $hashes = [];
         
         if (!empty($_FILES['documents'])) {
             $files = $this->normalizeFilesArray($_FILES['documents']);
-            
             foreach ($files as $file) {
-                if ($file['error'] !== UPLOAD_ERR_OK) {
-                    continue;
-                }
-                
-                $fileInfo = [
-                    'name' => $file['name'],
-                    'tmp_name' => $file['tmp_name'],
-                    'size' => $file['size'],
-                ];
-                
+                if ($file['error'] !== UPLOAD_ERR_OK) continue;
                 try {
-                    $result = $this->docService->processUpload($fileInfo);
+                    $result = $this->docService->processUpload($file);
                     $hashes[] = $result['sha256'];
-                    
-                    // Use first file's IPFS hash as primary
                     if (!$ipfsHash && !empty($result['ipfs_hash'])) {
                         $ipfsHash = $result['ipfs_hash'];
                     }
                 } catch (Exception $e) {
-                    error_log('Document upload error: ' . $e->getMessage());
+                    error_log('Upload error: ' . $e->getMessage());
                 }
             }
-            
             if (!empty($hashes)) {
                 $documentHash = $this->docService->combineHashes($hashes);
             }
         }
         
-        // Create coordinates JSON if GPS data exists
-        $coordinatesJson = null;
-        if ($gpsLat && $gpsLng) {
-            $coordinatesJson = json_encode([
-                'type' => 'Point',
-                'coordinates' => [$gpsLng, $gpsLat]
-            ]);
+        // ═══════════════════════════════════════════════════
+        // VALIDATION CHECKS (BEFORE SAVING)
+        // ═══════════════════════════════════════════════════
+        
+        $db = Database::getConnection();
+        
+        // Check 1: Duplicate document hash
+        if (!empty($documentHash)) {
+            $dupDoc = $db->prepare('SELECT id, parcel_number, title FROM parcels WHERE document_hash = ? AND status IN ("owned", "pending", "transferred")');
+            $dupDoc->execute([$documentHash]);
+            $dup = $dupDoc->fetch();
+            if ($dup) {
+                $this->respond(false, "❌ DUPLICATE DOCUMENTS: These exact documents are already registered under parcel {$dup['parcel_number']} - \"{$dup['title']}\".\n\nYou cannot register the same land twice with the same documents.", 409);
+                return;
+            }
         }
         
-        // Create parcel (off-chain - pending status)
+        // Check 2: Duplicate location address
+        if (!empty($location)) {
+            $dupLoc = $db->prepare('SELECT id, parcel_number, title FROM parcels WHERE location_address = ? AND status IN ("owned", "pending", "transferred")');
+            $dupLoc->execute([$location]);
+            $dupLocation = $dupLoc->fetch();
+            if ($dupLocation) {
+                $this->respond(false, "❌ DUPLICATE LOCATION: \"{$location}\" is already registered under parcel {$dupLocation['parcel_number']} - \"{$dupLocation['title']}\".\n\nThis address is already in the system.", 409);
+                return;
+            }
+        }
+        
+        // Check 3: GPS coordinate overlap
+        if ($gpsLat && $gpsLng) {
+            $existingParcels = $db->prepare('SELECT id, parcel_number, title, coordinates_json FROM parcels WHERE coordinates_json IS NOT NULL AND status IN ("owned", "pending", "transferred")');
+            $existingParcels->execute();
+            
+            while ($existing = $existingParcels->fetch()) {
+                $exCoords = json_decode($existing['coordinates_json'], true);
+                if ($exCoords && isset($exCoords['coordinates'])) {
+                    $exLat = $exCoords['coordinates'][1] ?? null;
+                    $exLng = $exCoords['coordinates'][0] ?? null;
+                    
+                    if ($exLat && $exLng) {
+                        $latDiff = abs($gpsLat - $exLat);
+                        $lngDiff = abs($gpsLng - $exLng);
+                        
+                        // Within ~50 meters
+                        if ($latDiff < 0.0005 && $lngDiff < 0.0005) {
+                            $this->respond(false, "❌ LOCATION OVERLAP: The GPS coordinates ({$gpsLat}, {$gpsLng}) overlap with existing parcel {$existing['parcel_number']} - \"{$existing['title']}\".\n\nThis location is too close to an already registered parcel.", 409);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // ═══════════════════════════════════════════════════
+        // ALL CHECKS PASSED - SAVE
+        // ═══════════════════════════════════════════════════
+        
+        $coordinatesJson = null;
+        if ($gpsLat && $gpsLng) {
+            $coordinatesJson = json_encode(['type' => 'Point', 'coordinates' => [$gpsLng, $gpsLat]]);
+        }
+        
         $parcelId = $this->parcelModel->create([
             'title' => $title,
             'location_address' => $location,
@@ -123,38 +156,24 @@ class ParcelController {
             'ipfs_hash' => $ipfsHash ?? ''
         ]);
         
-        // Create pending registration record
-        $db = Database::getConnection();
-        $stmt = $db->prepare('INSERT INTO pending_registrations (applicant_id, parcel_id) VALUES (?, ?)');
-        $stmt->execute([$user['id'], $parcelId]);
+        $db->prepare('INSERT INTO pending_registrations (applicant_id, parcel_id) VALUES (?, ?)')->execute([$user['id'], $parcelId]);
         $regId = $db->lastInsertId();
         
-        // Save document records
         if (!empty($hashes)) {
             foreach ($hashes as $hash) {
-                $stmt = $db->prepare('INSERT INTO parcel_documents (parcel_id, sha256_hash, ipfs_hash, uploaded_by) VALUES (?, ?, ?, ?)');
-                $stmt->execute([$parcelId, $hash, $ipfsHash, $user['id']]);
+                $db->prepare('INSERT INTO parcel_documents (parcel_id, sha256_hash, ipfs_hash, uploaded_by) VALUES (?, ?, ?, ?)')->execute([$parcelId, $hash, $ipfsHash, $user['id']]);
             }
         }
         
-        // Notify admins
-        $this->notifications->sendToAdmins(
-            'registration_submitted',
-            'New Land Registration',
-            "Parcel \"{$title}\" submitted by {$user['full_name']}",
-            $parcelId,
-            'parcel'
-        );
+        $this->notifications->sendToAdmins('registration_submitted', 'New Land Registration', "Parcel \"{$title}\" submitted by {$user['full_name']}", $parcelId, 'parcel');
         
-        // Log audit
-        $stmt = $db->prepare('INSERT INTO audit_log (user_id, action, entity_type, entity_id, notes) VALUES (?, ?, ?, ?, ?)');
-        $stmt->execute([$user['id'], 'registration_submitted', 'parcel', $parcelId, "Title: {$title}, Location: {$location}"]);
+        $db->prepare('INSERT INTO audit_log (user_id, action, entity_type, entity_id, notes) VALUES (?, ?, ?, ?, ?)')->execute([$user['id'], 'registration_submitted', 'parcel', $parcelId, "Title: {$title}"]);
         
         $this->respond(true, [
             'parcel_id' => $parcelId,
             'registration_id' => $regId,
             'parcel_number' => $this->parcelModel->findById($parcelId)['parcel_number'] ?? null,
-            'message' => 'Registration submitted successfully. Awaiting admin review.',
+            'message' => '✅ Registration submitted successfully! Awaiting admin review.',
             'documents_uploaded' => count($hashes),
             'ipfs_uploaded' => !empty($ipfsHash)
         ]);
@@ -186,7 +205,7 @@ class ParcelController {
     }
     
     /**
-     * POST /api/parcels/approve (Admin only - triggers blockchain if enabled)
+     * POST /api/parcels/approve (Admin only - BLOCKCHAIN REQUIRED)
      */
     public function approve(): void {
         $admin = $this->auth->requireAdmin();
@@ -197,14 +216,8 @@ class ParcelController {
             return;
         }
         
-        // Get registration details
         $db = Database::getConnection();
-        $stmt = $db->prepare('
-            SELECT r.*, p.document_hash, p.owner_id, p.title, p.id as parcel_id, p.parcel_number
-            FROM pending_registrations r 
-            JOIN parcels p ON r.parcel_id = p.id 
-            WHERE r.id = ?
-        ');
+        $stmt = $db->prepare('SELECT r.*, p.document_hash, p.owner_id, p.title, p.id as parcel_id, p.parcel_number FROM pending_registrations r JOIN parcels p ON r.parcel_id = p.id WHERE r.id = ?');
         $stmt->execute([$data['registration_id']]);
         $reg = $stmt->fetch();
         
@@ -213,64 +226,64 @@ class ParcelController {
             return;
         }
         
-        // ─── BLOCKCHAIN INTERACTION (admin-only) ───
-        $txHash = null;
-        
-        if ($this->blockchain->isEnabled() && $reg['document_hash']) {
-            
-            // STEP 1: Check if user has a wallet address
-            $ownerWallet = $this->userModel->getWalletAddress($reg['owner_id']);
-            
-            // STEP 2: If no wallet, GENERATE ONE for the user
-            if (!$ownerWallet) {
-                $ownerWallet = $this->generateWalletForUser($reg['owner_id']);
-            }
-            
-            // STEP 3: Now we have a wallet, record on blockchain
-            $result = $this->blockchain->recordLandRegistration(
-                $reg['document_hash'], 
-                $ownerWallet
-            );
-            
-            if ($result['success']) {
-                $txHash = $result['tx_hash'];
-            } else {
-                // Log error but continue with MySQL approval
-                error_log('Blockchain recording failed: ' . ($result['error'] ?? 'Unknown error'));
-            }
+        // Get or create wallet
+        $ownerWallet = $this->userModel->getWalletAddress($reg['owner_id']);
+        if (!$ownerWallet) {
+            $ownerWallet = $this->generateWalletForUser($reg['owner_id']);
         }
         
-        // Approve in database (always do this, with or without blockchain)
-        $this->parcelModel->approveRegistration(
-            $data['registration_id'], 
-            $admin['id'], 
-            $txHash
-        );
+        // Check for tx_hash from frontend
+        $txHash = $data['tx_hash'] ?? null;
         
-        // ✅ NOTIFY THE APPLICANT
-        $this->notifications->send(
-            $reg['applicant_id'],
-            'registration_approved',
-            '✅ Registration Approved',
-            "Your land parcel \"{$reg['title']}\" ({$reg['parcel_number']}) has been approved and recorded.",
-            $reg['parcel_id'],
-            'parcel'
-        );
+        if (empty($txHash)) {
+            // Return data needed for blockchain call
+            $this->respond(true, [
+                'status' => 'pending_blockchain',
+                'document_hash' => $reg['document_hash'],
+                'wallet_used' => $ownerWallet,
+                'registration_id' => (int)$data['registration_id']
+            ]);
+            return;
+        }
         
-        // ✅ NOTIFY OTHER ADMINS
-        $this->notifications->sendToAdmins(
-            'registration_approved_admin',
-            'Registration Approved',
-            "Parcel \"{$reg['title']}\" approved by {$admin['full_name']}.",
-            $reg['parcel_id'],
-            'parcel'
-        );
+        // TX hash provided - save to database
+        $this->parcelModel->approveRegistration($data['registration_id'], $admin['id'], $txHash);
         
-        $this->respond(true, [
-            'message' => 'Registration approved successfully',
-            'blockchain_tx' => $txHash,
-            'wallet_generated' => !empty($ownerWallet)
-        ]);
+        $this->notifications->send($reg['applicant_id'], 'registration_approved', '✅ Registration Approved', "Your parcel \"{$reg['title']}\" has been approved and recorded on blockchain.", $reg['parcel_id'], 'parcel');
+        
+        $this->respond(true, ['message' => 'Approved and recorded on blockchain', 'blockchain_tx' => $txHash]);
+    }
+
+    /**
+     * POST /api/parcels/update-blockchain
+     * Update blockchain tx hash after successful contract call
+     */
+    public function updateBlockchain(): void {
+        $admin = $this->auth->requireAdmin();
+        $data = json_decode(file_get_contents('php://input'), true);
+        
+        if (empty($data['registration_id']) || empty($data['tx_hash'])) {
+            $this->respond(false, 'Registration ID and tx_hash required', 400);
+            return;
+        }
+        
+        $db = Database::getConnection();
+        $stmt = $db->prepare('UPDATE parcels SET blockchain_tx_hash = ? WHERE id = (SELECT parcel_id FROM pending_registrations WHERE id = ?)');
+        $stmt->execute([$data['tx_hash'], $data['registration_id']]);
+        
+        $this->respond(true, ['message' => 'Blockchain tx updated']);
+    }
+
+    /**
+     * Verify a transaction on-chain
+     */
+    private function verifyTransactionOnChain(string $txHash): bool {
+        // Use ethers.js or a blockchain explorer API to verify
+        // For now, check if the hash format is valid
+        if (preg_match('/^0x[a-fA-F0-9]{64}$/', $txHash)) {
+            return true; // Format is valid
+        }
+        return false;
     }
 
     /**

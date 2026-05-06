@@ -28,7 +28,7 @@ define('ALLOWED_MIME_TYPES', [
 ]);
 
 // Blockchain (Admin-only interactions)
-define('LAND_REGISTRY_CONTRACT', '0xf733274e8946f220c940e9047E2717ba8892C7c2');
+define('LAND_REGISTRY_CONTRACT', '0x8a8937bb4cea0a6e00102ed9b9fcf8217d311d04');
 define('RPC_URL', 'https://sepolia.drpc.org');
 define('BLOCKCHAIN_ENABLED', true); // Toggle for testing
 

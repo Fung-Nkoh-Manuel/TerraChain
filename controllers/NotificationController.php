@@ -10,24 +10,42 @@ class NotificationController {
         $this->auth = new AuthMiddleware();
     }
     
+    /**
+     * GET /api/notifications/list
+     */
     public function list(): void {
         $user = $this->auth->requireAuth();
         
-        $notifications = $this->notifications->getUserNotifications($user['id']);
-        $unreadCount = $this->notifications->getUnreadCount($user['id']);
-        
-        $this->respond(true, [
-            'notifications' => $notifications,
-            'unread_count' => $unreadCount
-        ]);
+        try {
+            $notifications = $this->notifications->getUserNotifications($user['id']);
+            $unreadCount = $this->notifications->getUnreadCount($user['id']);
+            
+            $this->respond(true, [
+                'notifications' => $notifications,
+                'unread_count' => $unreadCount
+            ]);
+        } catch (Exception $e) {
+            $this->respond(false, 'Failed to load notifications: ' . $e->getMessage(), 500);
+        }
     }
     
+    /**
+     * POST /api/notifications/read-all
+     */
     public function markAllRead(): void {
         $user = $this->auth->requireAuth();
-        $this->notifications->markAllRead($user['id']);
-        $this->respond(true, ['message' => 'All notifications marked as read']);
+        
+        try {
+            $this->notifications->markAllRead($user['id']);
+            $this->respond(true, ['message' => 'All notifications marked as read']);
+        } catch (Exception $e) {
+            $this->respond(false, 'Failed: ' . $e->getMessage(), 500);
+        }
     }
     
+    /**
+     * POST /api/notifications/mark-read-one
+     */
     public function markReadOne(): void {
         $user = $this->auth->requireAuth();
         $data = json_decode(file_get_contents('php://input'), true);
@@ -37,8 +55,12 @@ class NotificationController {
             return;
         }
         
-        $this->notifications->markRead($data['id'], $user['id']);
-        $this->respond(true, ['message' => 'Notification marked as read']);
+        try {
+            $this->notifications->markRead($data['id'], $user['id']);
+            $this->respond(true, ['message' => 'Marked as read']);
+        } catch (Exception $e) {
+            $this->respond(false, 'Failed: ' . $e->getMessage(), 500);
+        }
     }
     
     private function respond(bool $success, $data, int $code = 200): void {

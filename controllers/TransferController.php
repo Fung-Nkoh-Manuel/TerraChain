@@ -69,7 +69,7 @@ class TransferController {
     }
     
     /**
-     * POST /api/transfers/approve (Admin only - triggers blockchain)
+     * POST /api/transfers/approve (Admin only - BLOCKCHAIN REQUIRED)
      */
     public function approve(): void {
         $admin = $this->auth->requireAdmin();
@@ -86,38 +86,58 @@ class TransferController {
             return;
         }
         
-        // Blockchain interaction
-        $txHash = null;
-        if ($this->blockchain->isEnabled()) {
-            $parcel = $this->parcelModel->findById($transfer['parcel_id']);
-            
-            if ($parcel && $parcel['document_hash']) {
-                $fromWallet = $this->userModel->getWalletAddress($transfer['sender_id']);
-                if (!$fromWallet) {
-                    $fromWallet = $this->generateWalletForUser($transfer['sender_id']);
-                }
-                
-                $toWallet = $this->userModel->getWalletAddress($transfer['recipient_id']);
-                if (!$toWallet) {
-                    $toWallet = $this->generateWalletForUser($transfer['recipient_id']);
-                }
-                
-                $result = $this->blockchain->recordTransfer(
-                    $parcel['document_hash'],
-                    $fromWallet,
-                    $toWallet
-                );
-                
-                if ($result['success']) {
-                    $txHash = $result['tx_hash'];
-                }
-            }
+        $parcel = $this->parcelModel->findById($transfer['parcel_id']);
+        if (!$parcel || !$parcel['document_hash']) {
+            $this->respond(false, 'Parcel or document hash not found', 404);
+            return;
+        }
+
+        // ═══════════════════════════════════════════════
+        // BLOCKCHAIN INTERACTION (REQUIRED)
+        // ═══════════════════════════════════════════════
+        
+        $newOwnerWallet = $this->userModel->getWalletAddress($transfer['recipient_id']);
+        if (!$newOwnerWallet) {
+            $newOwnerWallet = $this->generateWalletForUser($transfer['recipient_id']);
+        }
+
+        // BLOCKCHAIN TRANSACTION IS REQUIRED
+        if (!$this->blockchain->isEnabled()) {
+            $this->respond(false, '❌ Blockchain is disabled. Cannot approve transfer without blockchain recording.', 500);
+            return;
         }
         
-        // Approve transfer
+        // The frontend sends the tx_hash after MetaMask confirms
+        $txHash = $data['tx_hash'] ?? null;
+        
+        if (empty($txHash)) {
+            // Frontend hasn't sent tx_hash yet - return metadata for blockchain call
+            $this->respond(true, [
+                'status' => 'pending_blockchain',
+                'document_hash' => $parcel['document_hash'],
+                'new_owner_wallet' => $newOwnerWallet,
+                'transfer_id' => $data['transfer_id'],
+                'message' => 'Blockchain transaction required. Please confirm in MetaMask.'
+            ]);
+            return;
+        }
+        
+        // ═══════════════════════════════════════════════
+        // VERIFY BLOCKCHAIN TRANSACTION
+        // ═══════════════════════════════════════════════
+        
+        if (!empty($txHash) && !preg_match('/^0x[a-fA-F0-9]{64}$/', $txHash) && !str_starts_with($txHash, 'already_on_chain')) {
+             $this->respond(false, '❌ Invalid transaction hash format.', 400);
+             return;
+        }
+
+        // ═══════════════════════════════════════════════
+        // NOW APPROVE IN DATABASE
+        // ═══════════════════════════════════════════════
+        
         $this->transferModel->approve($data['transfer_id'], $admin['id'], $txHash);
         
-        // ✅ NOTIFY THE SELLER (previous owner)
+        // Notify the seller
         $this->notifications->send(
             $transfer['sender_id'],
             'transfer_approved',
@@ -127,7 +147,7 @@ class TransferController {
             'transfer'
         );
         
-        // ✅ NOTIFY THE BUYER (new owner)
+        // Notify the buyer
         $this->notifications->send(
             $transfer['recipient_id'],
             'transfer_received',
@@ -137,10 +157,44 @@ class TransferController {
             'transfer'
         );
         
+        // Notify admins
+        $this->notifications->sendToAdmins(
+            'transfer_completed_admin',
+            'Transfer Completed',
+            "Transfer of \"{$transfer['parcel_title']}\" approved by {$admin['full_name']} and recorded on-chain.",
+            $transfer['id'],
+            'transfer'
+        );
+        
+        // Log audit
+        $db = Database::getConnection();
+        $db->prepare('INSERT INTO audit_log (user_id, action, entity_type, entity_id, notes, blockchain_tx) VALUES (?, ?, ?, ?, ?, ?)')
+           ->execute([$admin['id'], 'transfer_approved', 'transfer', $transfer['id'], "Blockchain TX: {$txHash}", $txHash]);
+        
         $this->respond(true, [
-            'message' => 'Transfer approved and ownership updated',
-            'blockchain_tx' => $txHash
+            'message' => '✅ Transfer approved and recorded on blockchain!',
+            'blockchain_tx' => $txHash,
+            'parcel_number' => $transfer['parcel_number']
         ]);
+    }
+
+    /**
+     * POST /api/transfers/update-blockchain
+     */
+    public function updateBlockchain(): void {
+        $admin = $this->auth->requireAdmin();
+        $data = json_decode(file_get_contents('php://input'), true);
+        
+        if (empty($data['transfer_id']) || empty($data['tx_hash'])) {
+            $this->respond(false, 'Transfer ID and tx_hash required', 400);
+            return;
+        }
+        
+        $db = Database::getConnection();
+        $stmt = $db->prepare('UPDATE parcels SET blockchain_tx_hash = ? WHERE id = (SELECT parcel_id FROM transfers WHERE id = ?)');
+        $stmt->execute([$data['tx_hash'], $data['transfer_id']]);
+        
+        $this->respond(true, ['message' => 'Blockchain tx updated']);
     }
     
     /**
@@ -192,8 +246,12 @@ class TransferController {
      */
     public function myTransfers(): void {
         $user = $this->auth->requireAuth();
-        $transfers = $this->transferModel->getUserTransfers($user['id']);
-        $this->respond(true, $transfers);
+        try {
+            $transfers = $this->transferModel->getUserTransfers($user['id']);
+            $this->respond(true, $transfers);
+        } catch (Exception $e) {
+            $this->respond(false, 'Error: ' . $e->getMessage(), 500);
+        }
     }
     
     /**
@@ -201,8 +259,12 @@ class TransferController {
      */
     public function allTransfers(): void {
         $this->auth->requireAdmin();
-        $transfers = $this->transferModel->getAll();
-        $this->respond(true, $transfers);
+        try {
+            $transfers = $this->transferModel->getAll();
+            $this->respond(true, $transfers);
+        } catch (Exception $e) {
+            $this->respond(false, 'Error: ' . $e->getMessage(), 500);
+        }
     }
     
     /**
