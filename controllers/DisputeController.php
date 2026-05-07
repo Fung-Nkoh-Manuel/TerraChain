@@ -153,9 +153,6 @@ class DisputeController {
         $this->respond(false, 'Voting is disabled. Only admins can resolve disputes.', 403);
     }
     
-    /**
-     * POST /api/disputes/resolve (Admin - BLOCKCHAIN REQUIRED if ownership changes)
-     */
     public function resolve(): void {
         $admin = $this->auth->requireAdmin();
         $data = json_decode(file_get_contents('php://input'), true);
@@ -165,41 +162,90 @@ class DisputeController {
             return;
         }
         
-        $dispute = $this->disputeModel->findById($data['dispute_id']);
+        $dispute = $this->disputeModel->findById((int)$data['dispute_id']);
         if (!$dispute) {
             $this->respond(false, 'Dispute not found', 404);
             return;
         }
         
-        // Blockchain interaction if ownership changes
         $txHash = null;
         $newOwnerId = null;
+        $newOwnerWallet = null;
         
-        if ($data['outcome'] === 'ownership_changed' && $this->blockchain->isEnabled()) {
-            $parcel = $this->parcelModel->findById($dispute['parcel_id']);
-            $newOwnerId = $dispute['complainant_id'];
+        // ═══════════════════════════════════════════════
+        // DETERMINE IF OWNERSHIP CHANGES
+        // ═══════════════════════════════════════════════
+        
+        if ($data['outcome'] === 'ownership_changed') {
+            $newOwnerSelection = $data['new_owner_selection'] ?? 'complainant';
             
-            if (!empty($data['new_owner_email'])) {
-                $newOwner = $this->userModel->findByEmail($data['new_owner_email']);
-                if ($newOwner) $newOwnerId = $newOwner['id'];
+            switch ($newOwnerSelection) {
+                case 'complainant':
+                    $newOwnerId = $dispute['complainant_id'];
+                    break;
+                    
+                case 'respondent':
+                    // ✅ Respondent becomes the confirmed owner
+                    $newOwnerId = $dispute['respondent_id'];
+                    if (!$newOwnerId) {
+                        // If no respondent specified, keep the current owner
+                        $parcel = $this->parcelModel->findById($dispute['parcel_id']);
+                        $newOwnerId = $parcel['owner_id'];
+                    }
+                    break;
+                    
+                case 'other':
+                    $newOwnerEmail = $data['new_owner_email'] ?? '';
+                    if (empty($newOwnerEmail)) {
+                        $this->respond(false, 'New owner email required', 400);
+                        return;
+                    }
+                    $newOwner = $this->userModel->findByEmail($newOwnerEmail);
+                    if (!$newOwner) {
+                        $this->respond(false, "User not found: {$newOwnerEmail}", 404);
+                        return;
+                    }
+                    $newOwnerId = $newOwner['id'];
+                    break;
+                    
+                default:
+                    $newOwnerId = $dispute['complainant_id'];
             }
             
-            if ($parcel && $parcel['document_hash']) {
-                $newOwnerWallet = $this->userModel->getWalletAddress($newOwnerId);
-                if ($newOwnerWallet) {
+            // Get the new owner's wallet
+            $newOwnerWallet = $this->userModel->getWalletAddress($newOwnerId);
+            
+            // If no wallet, generate one
+            if (!$newOwnerWallet) {
+                $newOwnerWallet = $this->generateWalletForUser($newOwnerId);
+            }
+            
+            // Blockchain interaction
+            $parcel = $this->parcelModel->findById($dispute['parcel_id']);
+            
+            if ($parcel && $parcel['document_hash'] && $newOwnerWallet && $this->blockchain->isEnabled()) {
+                try {
                     $result = $this->blockchain->updateOwnershipDueToDispute(
                         $parcel['document_hash'],
                         $newOwnerWallet,
-                        $data['notes'] ?? 'Admin dispute resolution'
+                        $data['notes'] ?? 'Dispute resolution by admin'
                     );
-                    if ($result['success']) $txHash = $result['tx_hash'];
+                    if ($result['success']) {
+                        $txHash = $result['tx_hash'];
+                    }
+                } catch (Exception $e) {
+                    error_log('Blockchain update failed: ' . $e->getMessage());
+                    // Continue with database update even if blockchain fails
                 }
             }
         }
         
-        // Resolve dispute
+        // ═══════════════════════════════════════════════
+        // RESOLVE IN DATABASE
+        // ═══════════════════════════════════════════════
+        
         $this->disputeModel->resolve(
-            $data['dispute_id'],
+            (int)$data['dispute_id'],
             $admin['id'],
             $data['status'],
             $data['outcome'],
@@ -208,14 +254,38 @@ class DisputeController {
             $newOwnerId
         );
         
-        // Notify parties
-        $this->notifications->send($dispute['complainant_id'], 'dispute_resolved', '✅ Dispute Resolved', "Dispute #{$dispute['id']} for \"{$dispute['parcel_title']}\" has been resolved by admin.", $dispute['id'], 'dispute');
+        // Reload dispute to get updated parcel info
+        $dispute = $this->disputeModel->findById((int)$data['dispute_id']);
+        $parcel = $this->parcelModel->findById($dispute['parcel_id']);
         
+        // Notify complainant
+        $this->notifications->send(
+            $dispute['complainant_id'],
+            'dispute_resolved',
+            '✅ Dispute Resolved',
+            "Dispute #{$dispute['id']} for \"{$dispute['parcel_title']}\" has been resolved. Outcome: " . str_replace('_', ' ', $data['outcome']),
+            $dispute['id'],
+            'dispute'
+        );
+        
+        // Notify respondent if exists
         if ($dispute['respondent_id']) {
-            $this->notifications->send($dispute['respondent_id'], 'dispute_resolved', '✅ Dispute Resolved', "Dispute #{$dispute['id']} involving \"{$dispute['parcel_title']}\" has been resolved by admin.", $dispute['id'], 'dispute');
+            $this->notifications->send(
+                $dispute['respondent_id'],
+                'dispute_resolved',
+                '✅ Dispute Resolved',
+                "Dispute #{$dispute['id']} involving \"{$dispute['parcel_title']}\" has been resolved.",
+                $dispute['id'],
+                'dispute'
+            );
         }
         
-        $this->respond(true, ['message' => 'Dispute resolved successfully', 'blockchain_tx' => $txHash]);
+        $this->respond(true, [
+            'message' => 'Dispute resolved successfully',
+            'blockchain_tx' => $txHash,
+            'document_hash' => $parcel['document_hash'] ?? null,
+            'new_owner_wallet' => $newOwnerWallet ?? null
+        ]);
     }
 
     /**

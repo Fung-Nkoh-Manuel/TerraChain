@@ -68,20 +68,30 @@ class Dispute {
     public function resolve(int $disputeId, int $resolverId, string $status, string $outcome, string $notes, ?string $txHash = null, ?int $newOwnerId = null): void {
         $this->db->beginTransaction();
         try {
+            // Update dispute record
             $this->db->prepare('UPDATE disputes SET status = ?, outcome = ?, resolution_notes = ?, resolved_by = ?, resolved_at = NOW(), blockchain_tx_hash = ? WHERE id = ?')
                 ->execute([$status, $outcome, $notes, $resolverId, $txHash, $disputeId]);
             
-            $dispute = $this->findById($disputeId);
+            // Get the dispute to find the parcel
+            $stmt = $this->db->prepare('SELECT parcel_id FROM disputes WHERE id = ?');
+            $stmt->execute([$disputeId]);
+            $dispute = $stmt->fetch();
             
+            if (!$dispute) {
+                throw new Exception('Dispute not found');
+            }
+            
+            $parcelId = $dispute['parcel_id'];
+            
+            // Handle ownership change
             if ($outcome === 'ownership_changed' && $newOwnerId) {
-                $this->db->prepare('UPDATE parcels SET owner_id = ?, status = "owned", blockchain_tx_hash = ? WHERE id = ?')
-                    ->execute([$newOwnerId, $txHash, $dispute['parcel_id']]);
-            } elseif ($outcome === 'status_changed') {
-                $this->db->prepare('UPDATE parcels SET status = "restricted" WHERE id = ?')->execute([$dispute['parcel_id']]);
+                // ✅ Transfer ownership to the new owner
+                $this->db->prepare('UPDATE parcels SET owner_id = ?, status = "owned", blockchain_tx_hash = COALESCE(?, blockchain_tx_hash), updated_at = NOW() WHERE id = ?')
+                    ->execute([$newOwnerId, $txHash, $parcelId]);
             } else {
-                // Unlock parcel back to owned
-                $this->db->prepare('UPDATE parcels SET status = "owned" WHERE id = ? AND status = "disputed"')
-                    ->execute([$dispute['parcel_id']]);
+                // ✅ No ownership change — just unlock the parcel (remove disputed status)
+                $this->db->prepare('UPDATE parcels SET status = "owned", updated_at = NOW() WHERE id = ? AND status = "disputed"')
+                    ->execute([$parcelId]);
             }
             
             $this->db->commit();

@@ -272,74 +272,71 @@ async function rejectRegistration(regId) {
 //  TRANSFER APPROVAL (Auto-connect + Blockchain)
 // ══════════════════════════════════════════════════════
 async function approveTransfer(transferId) {
-  if (!confirm('Approve this transfer?\n\nOwnership will be permanently changed on the blockchain.')) return;
+    if (!confirm('Approve this transfer? This will record on blockchain.')) return;
 
-  toast('Step 1/3: Approving transfer in database...', 'info');
+    toast('Processing...', 'info');
 
-  try {
+    // Step 1: Call backend (no tx_hash yet)
     const res = await api('/transfers/approve', 'POST', { transfer_id: transferId });
 
     if (!res.success) {
-      toast(res.data?.error || 'Approval failed', 'error');
-      return;
+        toast(res.data?.error || 'Approval failed', 'error');
+        return;
     }
 
-    const responseData = res.data;
-    console.log('Transfer response:', responseData);
+    // Step 2: If blockchain needed, call MetaMask
+    if (res.data.status === 'pending_blockchain') {
+        const docHash = res.data.document_hash;
+        const newWallet = res.data.new_owner_wallet;
 
-    const documentHash = responseData.document_hash;
-    const newOwnerWallet = responseData.new_owner_wallet;
+        if (!docHash || !newWallet) {
+            toast('Missing blockchain data', 'error');
+            return;
+        }
 
-    if (!documentHash || !newOwnerWallet) {
-      toast('Transfer approved in database but missing blockchain data.', 'warn');
-      setTimeout(() => location.reload(), 2000);
-      return;
-    }
+        if (!window.ethereum) {
+            toast('MetaMask required! Connect wallet first.', 'error');
+            return;
+        }
 
-    // Step 2: Auto-connect wallet
-    toast('Step 2/3: Connecting to wallet...', 'info');
+        try {
+            const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+            const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
-    const walletReady = await ensureWalletConnected();
+            toast('Confirm transaction in MetaMask...', 'info');
+            const tx = await contract.transferOwnership(docHash, newWallet);
+            
+            toast('Waiting for confirmation...', 'info');
+            await tx.wait();
 
-    if (!walletReady) {
-      toast('❌ MetaMask not available. Transfer approved in database only.', 'warn');
-      setTimeout(() => location.reload(), 3000);
-      return;
-    }
+            console.log('Transfer tx confirmed:', tx.hash);
 
-    // Step 3: Record on blockchain
-    try {
-      toast('Step 3/3: Confirm transfer in MetaMask...', 'info');
-      console.log('Calling transferOwnership:', documentHash, newOwnerWallet);
+            // ✅ Step 3: Send tx_hash back to SAME endpoint
+            const finalRes = await api('/transfers/approve', 'POST', {
+                transfer_id: transferId,
+                tx_hash: tx.hash
+            });
 
-      const tx = await contract.transferOwnership(documentHash, newOwnerWallet);
-      console.log('Transaction sent:', tx.hash);
+            if (finalRes.success) {
+                toast('✅ Transfer approved & recorded!', 'success');
+            } else {
+                toast('⚠️ Blockchain OK but database error: ' + (finalRes.data?.error || ''), 'warn');
+            }
 
-      toast('⛏ Waiting for confirmation...', 'info');
-      await tx.wait();
-
-      toast(`✅ Transfer recorded on blockchain!\nTX: ${tx.hash.substring(0, 10)}...`, 'success');
-
-      await api('/transfers/update-blockchain', 'POST', {
-        transfer_id: transferId,
-        tx_hash: tx.hash
-      });
-
-    } catch (blockchainErr) {
-      console.error('Blockchain error:', blockchainErr);
-      if (blockchainErr.code === 4001) {
-        toast('⚠️ Transaction rejected in MetaMask. Transfer approved in database only.', 'warn');
-      } else {
-        toast(`⚠️ Blockchain error: ${blockchainErr.reason || blockchainErr.message}`, 'warn');
-      }
+        } catch (err) {
+            if (err.code === 4001) {
+                toast('❌ Transaction rejected in MetaMask. Transfer NOT approved.', 'error');
+            } else {
+                toast('❌ Error: ' + (err.reason || err.message), 'error');
+            }
+        }
+    } else {
+        toast('✅ Transfer approved!', 'success');
     }
 
     setTimeout(() => location.reload(), 3000);
-
-  } catch (err) {
-    console.error('Transfer error:', err);
-    toast('Error: ' + err.message, 'error');
-  }
 }
 
 async function rejectTransfer(transferId) {
@@ -588,65 +585,103 @@ async function viewDispute(disputeId) {
         toast('Failed to load dispute details', 'error');
     }
 }
+function resolveDispute(disputeId) {
+    const existing = document.querySelector('.modal-overlay');
+    if (existing) existing.remove();
 
-// ══════════════════════════════════════════════════════
-//  DISPUTE RESOLUTION (Auto-connect + Blockchain if ownership changes)
-// ══════════════════════════════════════════════════════
-async function resolveDispute(disputeId) {
-  const notes = prompt('Resolution notes:');
-  if (!notes || !notes.trim()) {
-    toast('Resolution cancelled', 'warn');
-    return;
-  }
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000;';
+    modal.innerHTML = `
+        <div style="background:#1a1f25;border:1px solid #242c35;border-radius:12px;padding:28px;max-width:500px;width:90%;">
+            <h3 style="font-family:Syne,sans-serif;color:#e8edf2;margin-bottom:16px;">Resolve Dispute #${disputeId}</h3>
+            
+            <div style="margin-bottom:14px;">
+                <label style="color:#8a9bb0;font-size:13px;display:block;margin-bottom:4px;">Resolution *</label>
+                <select id="resolveOutcome" style="width:100%;padding:10px;background:#111418;border:1px solid #242c35;border-radius:6px;color:#e8edf2;">
+                    <option value="resolved_complainant">Resolved - In Favor of Complainant</option>
+                    <option value="resolved_respondent">Resolved - In Favor of Respondent</option>
+                    <option value="dismissed">Dismissed</option>
+                </select>
+            </div>
+            
+            <div style="margin-bottom:14px;">
+                <label style="color:#8a9bb0;font-size:13px;display:block;margin-bottom:4px;">Ownership Change?</label>
+                <select id="resolveOwnership" style="width:100%;padding:10px;background:#111418;border:1px solid #242c35;border-radius:6px;color:#e8edf2;">
+                    <option value="no_change">No Change</option>
+                    <option value="ownership_changed">Change Ownership (requires blockchain)</option>
+                </select>
+            </div>
+            
+            <div style="margin-bottom:14px;">
+                <label style="color:#8a9bb0;font-size:13px;display:block;margin-bottom:4px;">Notes *</label>
+                <textarea id="resolveNotes" rows="4" required placeholder="Explain your decision..." style="width:100%;padding:10px;background:#111418;border:1px solid #242c35;border-radius:6px;color:#e8edf2;resize:vertical;"></textarea>
+            </div>
+            
+            <div style="display:flex;gap:10px;margin-top:16px;">
+                <button onclick="this.closest('.modal-overlay').remove()" style="flex:1;padding:10px;background:transparent;border:1px solid #242c35;border-radius:8px;color:#e8edf2;cursor:pointer;">Cancel</button>
+                <button onclick="submitResolution(${disputeId})" style="flex:2;padding:10px;background:#00e5a0;color:#000;border:none;border-radius:8px;font-weight:600;cursor:pointer;">✓ Resolve Dispute</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+}
 
-  const changeOwnership = confirm('Does ownership change?\n\nOK = Ownership Changes (will call blockchain)\nCancel = No Change (database only)');
-
-  toast('Resolving dispute...', 'info');
-
-  const res = await api('/disputes/resolve', 'POST', {
-    dispute_id: disputeId,
-    status: 'resolved_complainant',
-    outcome: changeOwnership ? 'ownership_changed' : 'no_change',
-    notes: notes.trim()
-  });
-
-  if (res.success) {
-    // If ownership changed, auto-connect and call blockchain
-    if (changeOwnership && res.data.document_hash && res.data.new_owner_wallet) {
-
-      toast('Ownership change requires blockchain. Connecting wallet...', 'info');
-
-      const walletReady = await ensureWalletConnected();
-
-      if (!walletReady) {
-        toast('❌ MetaMask not available. Dispute resolved in database only.', 'warn');
-        setTimeout(() => location.reload(), 3000);
+async function submitResolution(disputeId) {
+    const status = document.getElementById('resolveOutcome').value;
+    const outcome = document.getElementById('resolveOwnership').value;
+    const notes = document.getElementById('resolveNotes').value.trim();
+    
+    if (!notes) {
+        toast('Please enter resolution notes.', 'warn');
         return;
-      }
-
-      try {
-        toast('Recording ownership change on blockchain...', 'info');
-        const tx = await contract.updateOwnershipAfterDispute(
-          res.data.document_hash,
-          res.data.new_owner_wallet,
-          notes.trim()
-        );
-        await tx.wait();
-        toast('✅ Dispute resolved & recorded on blockchain!', 'success');
-      } catch (err) {
-        if (err.code === 4001) {
-          toast('⚠️ Transaction rejected. Dispute resolved in database only.', 'warn');
-        } else {
-          toast('⚠️ Blockchain error: ' + (err.reason || err.message), 'warn');
-        }
-      }
-    } else {
-      toast('Dispute resolved!', 'success');
     }
-    setTimeout(() => location.reload(), 2500);
-  } else {
-    toast(res.data?.error || 'Resolution failed', 'error');
-  }
+    
+    // Close modal
+    document.querySelector('.modal-overlay').remove();
+    
+    toast('Resolving dispute...', 'info');
+    
+    const res = await api('/disputes/resolve', 'POST', {
+        dispute_id: disputeId,
+        status: status,
+        outcome: outcome,
+        notes: notes
+    });
+    
+    if (res.success) {
+        if (outcome === 'ownership_changed' && window.ethereum) {
+            toast('Ownership change requires blockchain. Connecting wallet...', 'info');
+            
+            try {
+                const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                const provider = new ethers.BrowserProvider(window.ethereum);
+                const signer = await provider.getSigner();
+                const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+                
+                toast('Confirm transaction in MetaMask...', 'info');
+                const tx = await contract.updateOwnershipAfterDispute(
+                    res.data.document_hash,
+                    res.data.new_owner_wallet,
+                    notes
+                );
+                await tx.wait();
+                toast('✅ Dispute resolved & recorded on blockchain!', 'success');
+            } catch (err) {
+                if (err.code === 4001) {
+                    toast('⚠️ Transaction rejected. Dispute resolved in database only.', 'warn');
+                } else {
+                    toast('⚠️ Blockchain error: ' + (err.reason || err.message), 'warn');
+                }
+            }
+        } else {
+            toast('✅ Dispute resolved!', 'success');
+        }
+        setTimeout(() => location.reload(), 2500);
+    } else {
+        toast(res.data?.error || 'Resolution failed', 'error');
+    }
 }
 
 // ══════════════════════════════════════════════════════

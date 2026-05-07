@@ -229,6 +229,7 @@ class TransferController {
         }
         
         // ✅ BLOCKCHAIN TX PROVIDED - NOW SAVE TO DATABASE
+        error_log("Finalizing transfer #{$data['transfer_id']} with TX: {$txHash}");
         $this->transferModel->approve($data['transfer_id'], $admin['id'], $txHash);
         
         // Notify both parties
