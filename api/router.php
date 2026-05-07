@@ -71,6 +71,7 @@ $routes = [
     'GET /api/parcels/all'       => ['ParcelController', 'allParcels'],
     'GET /api/parcels/search'    => ['ParcelController', 'search'],
     'GET /api/parcels/pending'   => ['ParcelController', 'pending'],
+    'GET /api/parcels/get'       => ['ParcelController', 'getParcel'],
     'POST /api/parcels/update-blockchain' => ['ParcelController', 'updateBlockchain'],
     
     // KYC

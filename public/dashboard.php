@@ -1492,6 +1492,96 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
             }
             return null;
         }
+
+        function viewParcel(parcelId) {
+            // Fetch parcel details and show in a modal
+            const existing = document.querySelector('.modal-overlay');
+            if (existing) existing.remove();
+
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000;';
+            modal.innerHTML = '<div style="background:#1a1f25;border:1px solid #242c35;border-radius:12px;padding:28px;max-width:550px;width:90%;"><div style="text-align:center;padding:20px;">Loading parcel details...</div></div>';
+            document.body.appendChild(modal);
+
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) modal.remove();
+            });
+
+            // Fetch parcel data
+            fetch('../api/parcels/get?id=' + parcelId, { credentials: 'same-origin' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        const p = data.data;
+                        const docsHtml = p.documents && p.documents.length > 0 
+                            ? p.documents.map(d => `
+                                <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(36,44,53,0.5);">
+                                    <span style="color:#e8edf2;font-size:12px;">${escapeHtml(d.file_name || 'Document')}</span>
+                                    ${d.ipfs_hash ? `<a href="https://gateway.pinata.cloud/ipfs/${d.ipfs_hash}" target="_blank" style="color:#4d9eff;font-size:11px;">View</a>` : ''}
+                                </div>
+                            `).join('')
+                            : '<p style="color:#4a5a6a;">No documents attached</p>';
+
+                        modal.querySelector('div > div').innerHTML = `
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                                <h3 style="font-family:Syne,sans-serif;color:#e8edf2;margin:0;">${escapeHtml(p.title || 'Parcel Details')}</h3>
+                                <button onclick="this.closest('.modal-overlay').remove()" style="background:none;border:none;color:#4a5a6a;font-size:22px;cursor:pointer;">✕</button>
+                            </div>
+                            <div style="background:#111418;border:1px solid #242c35;border-radius:8px;padding:16px;margin-bottom:16px;">
+                                <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                                    <span style="color:#8a9bb0;">Parcel Number</span>
+                                    <span style="color:#00e5a0;font-family:monospace;">${escapeHtml(p.parcel_number || 'N/A')}</span>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                                    <span style="color:#8a9bb0;">Status</span>
+                                    <span class="badge badge-${p.status === 'owned' ? 'green' : 'yellow'}">${escapeHtml(p.status || 'N/A')}</span>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                                    <span style="color:#8a9bb0;">Location</span>
+                                    <span style="color:#e8edf2;">${escapeHtml(p.location_address || 'N/A')}</span>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                                    <span style="color:#8a9bb0;">Type</span>
+                                    <span style="color:#e8edf2;">${escapeHtml(p.property_type || 'N/A')}</span>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                                    <span style="color:#8a9bb0;">Size</span>
+                                    <span style="color:#e8edf2;">${p.size_sqm ? p.size_sqm + ' m²' : 'N/A'}</span>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                                    <span style="color:#8a9bb0;">GPS</span>
+                                    <span style="color:#e8edf2;">${p.gps_lat && p.gps_lng ? p.gps_lat + ', ' + p.gps_lng : 'N/A'}</span>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                                    <span style="color:#8a9bb0;">Owner</span>
+                                    <span style="color:#e8edf2;">${escapeHtml(p.owner_name || 'N/A')}</span>
+                                </div>
+                            </div>
+                            ${p.description ? `
+                            <div style="background:#111418;border:1px solid #242c35;border-radius:8px;padding:16px;margin-bottom:16px;">
+                                <span style="color:#8a9bb0;font-size:11px;text-transform:uppercase;">Description</span>
+                                <p style="color:#e8edf2;margin-top:8px;line-height:1.6;">${escapeHtml(p.description)}</p>
+                            </div>` : ''}
+                            <div style="background:#111418;border:1px solid #242c35;border-radius:8px;padding:16px;">
+                                <span style="color:#8a9bb0;font-size:11px;text-transform:uppercase;">Documents</span>
+                                <div style="margin-top:8px;">${docsHtml}</div>
+                            </div>
+                        `;
+                    } else {
+                        modal.querySelector('div > div').innerHTML = `
+                            <div style="text-align:center;padding:20px;color:#ff3b5c;">Failed to load parcel details</div>
+                            <button onclick="this.closest('.modal-overlay').remove()" style="display:block;margin:0 auto;background:none;border:1px solid #242c35;color:#e8edf2;padding:8px 16px;border-radius:6px;cursor:pointer;">Close</button>
+                        `;
+                    }
+                })
+                .catch(err => {
+                    modal.querySelector('div > div').innerHTML = `
+                        <div style="text-align:center;padding:20px;color:#ff3b5c;">Network error</div>
+                        <button onclick="this.closest('.modal-overlay').remove()" style="display:block;margin:0 auto;background:none;border:1px solid #242c35;color:#e8edf2;padding:8px 16px;border-radius:6px;cursor:pointer;">Close</button>
+                    `;
+                });
+        }
     </script>
 </body>
 </html>

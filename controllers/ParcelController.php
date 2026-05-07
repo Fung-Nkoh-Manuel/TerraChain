@@ -410,7 +410,35 @@ class ParcelController {
         $pending = $this->parcelModel->getPendingRegistrations();
         $this->respond(true, $pending);
     }
-    
+
+    /**
+     * GET /api/parcels/get?id=X
+     */
+    public function getParcel(): void {
+        $this->auth->requireAuth();
+        $parcelId = intval($_GET['id'] ?? 0);
+        
+        if (!$parcelId) {
+            $this->respond(false, 'Parcel ID required', 400);
+            return;
+        }
+        
+        $parcel = $this->parcelModel->findById($parcelId);
+        
+        if (!$parcel) {
+            $this->respond(false, 'Parcel not found', 404);
+            return;
+        }
+        
+        // Get documents
+        $db = Database::getConnection();
+        $docs = $db->prepare('SELECT * FROM parcel_documents WHERE parcel_id = ?');
+        $docs->execute([$parcelId]);
+        $parcel['documents'] = $docs->fetchAll();
+        
+        $this->respond(true, $parcel);
+    }
+
     private function respond(bool $success, $data, int $code = 200): void {
         http_response_code($code);
         echo json_encode(['success' => $success, 'data' => $data]);
