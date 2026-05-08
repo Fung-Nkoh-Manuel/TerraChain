@@ -1,0 +1,14 @@
+# Ignore uploads but keep the directory via .gitkeep
+/uploads/*
+!/uploads/.gitkeep
+
+# Ignore database secrets (User should use .env or template)
+# config/database.php
+
+# Common ignores
+.DS_Store
+Thumbs.db
+*.log
+node_modules/
+vendor/
+.env
