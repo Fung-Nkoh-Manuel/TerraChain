@@ -149,6 +149,47 @@ $notifications = $notifService->getUserNotifications($admin['id']);
                     </div>
                 </div>
                 
+                <!-- All Registered Properties -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>All Registered Properties</h2>
+                        <span class="badge badge-blue"><?php 
+                            $allParcels = $parcelModel->getAllActive();
+                            echo count($allParcels); 
+                        ?> total</span>
+                    </div>
+                    <?php if (empty($allParcels)): ?>
+                        <div class="empty-state">No properties registered yet</div>
+                    <?php else: ?>
+                        <div class="table-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Parcel #</th>
+                                        <th>Title</th>
+                                        <th>Location</th>
+                                        <th>Type</th>
+                                        <th>Owner</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($allParcels as $parcel): ?>
+                                        <tr>
+                                            <td><span class="badge badge-blue"><?php echo htmlspecialchars($parcel['parcel_number']); ?></span></td>
+                                            <td><?php echo htmlspecialchars($parcel['title']); ?></td>
+                                            <td><?php echo htmlspecialchars($parcel['location_address'] ?? $parcel['location'] ?? 'N/A'); ?></td>
+                                            <td><?php echo htmlspecialchars($parcel['property_type'] ?? $parcel['propertyType'] ?? 'N/A'); ?></td>
+                                            <td><?php echo htmlspecialchars($parcel['owner_name'] ?? 'N/A'); ?></td>
+                                            <td><?php echo statusBadge($parcel['status']); ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+                </div>
+                
                 <!-- Recent Activity -->
                 <div class="card">
                     <div class="card-header">

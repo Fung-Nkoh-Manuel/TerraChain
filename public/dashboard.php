@@ -21,6 +21,7 @@ $notifService = new NotificationService();
 
 $kyc = $kycModel->getUserKYC($user['id']);
 $parcels = $parcelModel->getUserParcels($user['id']);
+$allParcels = $parcelModel->getAllActive();
 $notifications = $notifService->getUserNotifications($user['id']);
 $unreadCount = $notifService->getUnreadCount($user['id']);
 ?>
@@ -170,17 +171,17 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                 <!-- Stats -->
                 <div class="stats-grid">
                     <div class="stat-card">
+                        <div class="stat-icon">📋</div>
+                        <div class="stat-info">
+                            <div class="stat-value"><?php echo count($allParcels); ?></div>
+                            <div class="stat-label">Total Registered Properties</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
                         <div class="stat-icon">🏠</div>
                         <div class="stat-info">
                             <div class="stat-value"><?php echo count($parcels); ?></div>
                             <div class="stat-label">My Properties</div>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon">⏳</div>
-                        <div class="stat-info">
-                            <div class="stat-value" id="statPending">—</div>
-                            <div class="stat-label">Pending Actions</div>
                         </div>
                     </div>
                     <div class="stat-card">
@@ -192,20 +193,22 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                     </div>
                 </div>
                 
-                <!-- Recent Properties -->
+                <!-- All Registered Properties -->
                 <div class="card">
                     <div class="card-header">
-                        <h2>My Properties</h2>
-                        <button class="btn btn-sm btn-outline" onclick="showSection('register')">+ Register New</button>
+                        <h2>📋 All Registered Properties</h2>
+                        <span class="badge badge-blue"><?php 
+                            $allParcels = $parcelModel->getAllActive();
+                            echo count($allParcels); 
+                        ?> properties on record</span>
                     </div>
-                    <?php if (empty($parcels)): ?>
+                    <?php if (empty($allParcels)): ?>
                         <div class="empty-state">
                             <div class="empty-icon">🏚️</div>
                             <p>No properties registered yet</p>
-                            <button class="btn btn-primary" onclick="showSection('register')">Register Your First Property</button>
                         </div>
                     <?php else: ?>
-                        <div class="table-wrapper">
+                        <div class="table-wrapper" style="max-height:500px;overflow-y:auto;">
                             <table>
                                 <thead>
                                     <tr>
@@ -213,24 +216,25 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                                         <th>Title</th>
                                         <th>Location</th>
                                         <th>Type</th>
+                                        <th>Owner</th>
                                         <th>Status</th>
-                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php foreach ($parcels as $parcel): ?>
-                                        <tr>
+                                    <?php foreach ($allParcels as $parcel): ?>
+                                        <tr style="<?php echo $parcel['owner_id'] == $user['id'] ? 'background:rgba(0,229,160,0.03);' : ''; ?>">
                                             <td><span class="badge badge-blue"><?php echo htmlspecialchars($parcel['parcel_number']); ?></span></td>
                                             <td><?php echo htmlspecialchars($parcel['title']); ?></td>
-                                            <td><?php echo htmlspecialchars($parcel['location_address']); ?></td>
-                                            <td><?php echo ucfirst($parcel['property_type']); ?></td>
-                                            <td><?php echo statusBadge($parcel['status']); ?></td>
+                                            <td><?php echo htmlspecialchars($parcel['location_address'] ?? $parcel['location'] ?? 'N/A'); ?></td>
+                                            <td><?php echo htmlspecialchars($parcel['property_type'] ?? $parcel['propertyType'] ?? 'N/A'); ?></td>
                                             <td>
-                                                <button class="btn btn-sm btn-outline" onclick="viewParcel(<?php echo $parcel['id']; ?>)">View</button>
-                                                <?php if ($parcel['status'] === 'owned'): ?>
-                                                    <button class="btn btn-sm btn-outline" onclick="openTransferModal('<?php echo htmlspecialchars($parcel['parcel_number']); ?>')">Transfer</button>
+                                                <?php if ($parcel['owner_id'] == $user['id']): ?>
+                                                    <span style="color:#00e5a0;font-weight:600;">🏠 You</span>
+                                                <?php else: ?>
+                                                    <?php echo htmlspecialchars($parcel['owner_name'] ?? 'Unknown'); ?>
                                                 <?php endif; ?>
                                             </td>
+                                            <td><?php echo statusBadge($parcel['status']); ?></td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
@@ -390,29 +394,40 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
             }
             
             el.innerHTML = `
-                <div class="property-grid">
-                    ${properties.map(p => `
-                        <div class="property-card">
-                            <div class="property-card-header">
-                                <div>
-                                    <div class="property-card-title">${escapeHtml(p.title)}</div>
-                                    <div class="property-card-number">${escapeHtml(p.parcel_number)}</div>
-                                </div>
-                                <span class="badge badge-green">${escapeHtml(p.status)}</span>
-                            </div>
-                            <div class="property-card-location">📍 ${escapeHtml(p.location_address)}</div>
-                            <div class="property-card-details">
-                                <div class="property-detail">
-                                    <div class="property-detail-label">Type</div>
-                                    <div class="property-detail-value">${escapeHtml(p.property_type)}</div>
-                                </div>
-                                <div class="property-detail">
-                                    <div class="property-detail-label">Size</div>
-                                    <div class="property-detail-value">${p.size_sqm || '—'} m²</div>
-                                </div>
-                            </div>
-                        </div>
-                    `).join('')}
+                <div class="card">
+                    <div class="card-header">
+                        <h2>My Properties</h2>
+                        <button class="btn btn-sm btn-outline" onclick="showSection('register')">+ Register New</button>
+                    </div>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Parcel #</th>
+                                    <th>Title</th>
+                                    <th>Location</th>
+                                    <th>Owner</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${properties.map(p => `
+                                    <tr>
+                                        <td><span class="badge badge-blue">${escapeHtml(p.parcel_number)}</span></td>
+                                        <td>${escapeHtml(p.title)}</td>
+                                        <td>${escapeHtml(p.location_address || p.location || 'N/A')}</td>
+                                        <td>${escapeHtml(p.owner_name || 'You')}</td>
+                                        <td><span class="badge badge-${p.status === 'owned' ? 'green' : 'yellow'}">${escapeHtml(p.status)}</span></td>
+                                        <td class="action-buttons">
+                                            <button class="btn btn-sm btn-outline" onclick="viewParcel(${p.id})">👁 View</button>
+                                            ${p.status === 'owned' ? `<button class="btn btn-sm btn-outline" onclick="openTransferModal('${escapeHtml(p.parcel_number)}')">⇄ Transfer</button>` : ''}
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>`;
         }
 
@@ -426,33 +441,35 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                 <div class="card">
                     <div class="card-header">
                         <h2>All Registered Properties</h2>
-                        <input type="text" id="searchInput" placeholder="Search..." 
+                        <input type="text" id="searchInput" placeholder="Search by title, location, or owner..." 
                                onkeyup="searchProperties(this.value)" 
-                               style="max-width:300px;">
+                               style="max-width:350px;">
                     </div>
-                    <div class="property-grid" id="browseGrid">
-                        ${properties.map(p => `
-                            <div class="property-card" data-search="${escapeHtml(p.title)} ${escapeHtml(p.location_address)}">
-                                <div class="property-card-header">
-                                    <div>
-                                        <div class="property-card-title">${escapeHtml(p.title)}</div>
-                                        <div class="property-card-number">${escapeHtml(p.parcel_number)}</div>
-                                    </div>
-                                    <span class="badge badge-${p.status === 'owned' ? 'green' : 'yellow'}">${escapeHtml(p.status)}</span>
-                                </div>
-                                <div class="property-card-location">📍 ${escapeHtml(p.location_address)}</div>
-                                <div class="property-card-details">
-                                    <div class="property-detail">
-                                        <div class="property-detail-label">Type</div>
-                                        <div class="property-detail-value">${escapeHtml(p.property_type)}</div>
-                                    </div>
-                                    <div class="property-detail">
-                                        <div class="property-detail-label">Owner</div>
-                                        <div class="property-detail-value">${escapeHtml(p.owner_name || 'N/A')}</div>
-                                    </div>
-                                </div>
-                            </div>
-                        `).join('')}
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Parcel #</th>
+                                    <th>Title</th>
+                                    <th>Location</th>
+                                    <th>Type</th>
+                                    <th>Owner</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="browseTableBody">
+                                ${properties.map(p => `
+                                    <tr data-search="${escapeHtml(p.title)} ${escapeHtml(p.location_address || '')} ${escapeHtml(p.owner_name || '')} ${escapeHtml(p.parcel_number)}">
+                                        <td><span class="badge badge-blue">${escapeHtml(p.parcel_number)}</span></td>
+                                        <td>${escapeHtml(p.title)}</td>
+                                        <td>${escapeHtml(p.location_address || p.location || 'N/A')}</td>
+                                        <td>${escapeHtml(p.property_type || p.propertyType || 'N/A')}</td>
+                                        <td>${escapeHtml(p.owner_name || 'N/A')}</td>
+                                        <td><span class="badge badge-${p.status === 'owned' ? 'green' : 'yellow'}">${escapeHtml(p.status)}</span></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
                     </div>
                 </div>`;
         }
