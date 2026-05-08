@@ -22,9 +22,30 @@ $notifService = new NotificationService();
 
 $pendingKYC = $kycModel->getPendingKYC();
 $pendingRegistrations = $parcelModel->getPendingRegistrations();
-$pendingTransfers = $transferModel->getAll();
-$disputes = $disputeModel->getAll();
+$allTransfers = $transferModel->getAll();
+$allDisputes = $disputeModel->getAll();
+$allParcels = $parcelModel->getAllActive();
 $notifications = $notifService->getUserNotifications($admin['id']);
+
+// ✅ Count only PENDING transfers
+$pendingTransfersCount = 0;
+foreach ($allTransfers as $t) {
+    if ($t['status'] === 'pending') {
+        $pendingTransfersCount++;
+    }
+}
+
+// ✅ Count only OPEN/UNDER_REVIEW disputes (not resolved/dismissed)
+$activeDisputesCount = 0;
+foreach ($allDisputes as $d) {
+    if (in_array($d['status'], ['open', 'under_review'])) {
+        $activeDisputesCount++;
+    }
+}
+
+// Aliases for compatibility with the rest of the file
+$pendingTransfers = $allTransfers;
+$disputes = $allDisputes;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -67,9 +88,15 @@ $notifications = $notifService->getUserNotifications($admin['id']);
                 </a>
                 <a href="#" class="nav-item" onclick="switchTab('transfers', this)">
                     ⇄ Transfers
+                    <?php if ($pendingTransfersCount > 0): ?>
+                        <span class="badge badge-yellow"><?php echo $pendingTransfersCount; ?></span>
+                    <?php endif; ?>
                 </a>
                 <a href="#" class="nav-item" onclick="switchTab('disputes', this)">
                     ⚖️ Disputes
+                    <?php if ($activeDisputesCount > 0): ?>
+                        <span class="badge badge-red"><?php echo $activeDisputesCount; ?></span>
+                    <?php endif; ?>
                 </a>
                 <a href="#" class="nav-item" onclick="switchTab('settings', this)">
                     ⚙ Settings
@@ -136,14 +163,14 @@ $notifications = $notifService->getUserNotifications($admin['id']);
                     <div class="stat-card">
                         <div class="stat-icon">⇄</div>
                         <div class="stat-info">
-                            <div class="stat-value"><?php echo count($pendingTransfers); ?></div>
-                            <div class="stat-label">Total Transfers</div>
+                            <div class="stat-value"><?php echo $pendingTransfersCount; ?></div>
+                            <div class="stat-label">Pending Transfers</div>
                         </div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-icon">⚖️</div>
                         <div class="stat-info">
-                            <div class="stat-value"><?php echo count($disputes); ?></div>
+                            <div class="stat-value"><?php echo $activeDisputesCount; ?></div>
                             <div class="stat-label">Active Disputes</div>
                         </div>
                     </div>
