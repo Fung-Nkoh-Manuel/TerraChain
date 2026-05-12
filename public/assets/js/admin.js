@@ -88,29 +88,35 @@ async function ensureWalletConnected() {
 // ── Tab Switching ────────────────────────────────────
 // ── Tab Switching ────────────────────────────────────
 function switchTab(tabName, el) {
-    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-    const targetTab = document.getElementById('tab-' + tabName);
-    if (targetTab) targetTab.classList.add('active');
+  // ✅ If clicking Overview, just reload the page to get fresh PHP data
+  if (tabName === 'overview') {
+    window.location.reload();
+    return;
+  }
 
-    document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => item.classList.remove('active'));
-    if (el) el.classList.add('active');
+  document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+  const targetTab = document.getElementById('tab-' + tabName);
+  if (targetTab) targetTab.classList.add('active');
 
-    const titles = {
-        'overview': 'Admin Overview',
-        'registrations': 'Land Registrations',
-        'kyc': 'KYC Verification',
-        'transfers': 'Transfer Requests',
-        'disputes': 'Disputes',
-        'settings': 'Wallet Settings',
-        'blockchain': 'Blockchain Status'
-    };
-    const titleEl = document.getElementById('tabTitle');
-    if (titleEl) titleEl.textContent = titles[tabName] || tabName;
+  document.querySelectorAll('.sidebar-nav .nav-item').forEach(item => item.classList.remove('active'));
+  if (el) el.classList.add('active');
 
-    // Track current tab for auto-refresh
-    currentTab = tabName;
-    // Refresh immediately when switching tabs
-    setTimeout(() => refreshCurrentTab(), 500);
+  const titles = {
+    'overview': 'Admin Overview',
+    'registrations': 'Land Registrations',
+    'kyc': 'KYC Verification',
+    'transfers': 'Transfer Requests',
+    'disputes': 'Disputes',
+    'settings': 'Wallet Settings',
+    'blockchain': 'Blockchain Status'
+  };
+  const titleEl = document.getElementById('tabTitle');
+  if (titleEl) titleEl.textContent = titles[tabName] || tabName;
+
+  // Track current tab for auto-refresh
+  currentTab = tabName;
+  // Refresh immediately when switching tabs
+  setTimeout(() => refreshCurrentTab(), 500);
 }
 
 // ── Toast Notifications ──────────────────────────────
@@ -272,71 +278,71 @@ async function rejectRegistration(regId) {
 //  TRANSFER APPROVAL (Auto-connect + Blockchain)
 // ══════════════════════════════════════════════════════
 async function approveTransfer(transferId) {
-    if (!confirm('Approve this transfer? This will record on blockchain.')) return;
+  if (!confirm('Approve this transfer? This will record on blockchain.')) return;
 
-    toast('Processing...', 'info');
+  toast('Processing...', 'info');
 
-    // Step 1: Call backend (no tx_hash yet)
-    const res = await api('/transfers/approve', 'POST', { transfer_id: transferId });
+  // Step 1: Call backend (no tx_hash yet)
+  const res = await api('/transfers/approve', 'POST', { transfer_id: transferId });
 
-    if (!res.success) {
-        toast(res.data?.error || 'Approval failed', 'error');
-        return;
+  if (!res.success) {
+    toast(res.data?.error || 'Approval failed', 'error');
+    return;
+  }
+
+  // Step 2: If blockchain needed, call MetaMask
+  if (res.data.status === 'pending_blockchain') {
+    const docHash = res.data.document_hash;
+    const newWallet = res.data.new_owner_wallet;
+
+    if (!docHash || !newWallet) {
+      toast('Missing blockchain data', 'error');
+      return;
     }
 
-    // Step 2: If blockchain needed, call MetaMask
-    if (res.data.status === 'pending_blockchain') {
-        const docHash = res.data.document_hash;
-        const newWallet = res.data.new_owner_wallet;
-
-        if (!docHash || !newWallet) {
-            toast('Missing blockchain data', 'error');
-            return;
-        }
-
-        if (!window.ethereum) {
-            toast('MetaMask required! Connect wallet first.', 'error');
-            return;
-        }
-
-        try {
-            const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            const signer = await provider.getSigner();
-            const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-
-            toast('Confirm transaction in MetaMask...', 'info');
-            const tx = await contract.transferOwnership(docHash, newWallet);
-            
-            toast('Waiting for confirmation...', 'info');
-            await tx.wait();
-
-            console.log('Transfer tx confirmed:', tx.hash);
-
-            // ✅ Step 3: Send tx_hash back to SAME endpoint
-            const finalRes = await api('/transfers/approve', 'POST', {
-                transfer_id: transferId,
-                tx_hash: tx.hash
-            });
-
-            if (finalRes.success) {
-                toast('✅ Transfer approved & recorded!', 'success');
-            } else {
-                toast('⚠️ Blockchain OK but database error: ' + (finalRes.data?.error || ''), 'warn');
-            }
-
-        } catch (err) {
-            if (err.code === 4001) {
-                toast('❌ Transaction rejected in MetaMask. Transfer NOT approved.', 'error');
-            } else {
-                toast('❌ Error: ' + (err.reason || err.message), 'error');
-            }
-        }
-    } else {
-        toast('✅ Transfer approved!', 'success');
+    if (!window.ethereum) {
+      toast('MetaMask required! Connect wallet first.', 'error');
+      return;
     }
 
-    setTimeout(() => location.reload(), 3000);
+    try {
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+
+      toast('Confirm transaction in MetaMask...', 'info');
+      const tx = await contract.transferOwnership(docHash, newWallet);
+
+      toast('Waiting for confirmation...', 'info');
+      await tx.wait();
+
+      console.log('Transfer tx confirmed:', tx.hash);
+
+      // ✅ Step 3: Send tx_hash back to SAME endpoint
+      const finalRes = await api('/transfers/approve', 'POST', {
+        transfer_id: transferId,
+        tx_hash: tx.hash
+      });
+
+      if (finalRes.success) {
+        toast('✅ Transfer approved & recorded!', 'success');
+      } else {
+        toast('⚠️ Blockchain OK but database error: ' + (finalRes.data?.error || ''), 'warn');
+      }
+
+    } catch (err) {
+      if (err.code === 4001) {
+        toast('❌ Transaction rejected in MetaMask. Transfer NOT approved.', 'error');
+      } else {
+        toast('❌ Error: ' + (err.reason || err.message), 'error');
+      }
+    }
+  } else {
+    toast('✅ Transfer approved!', 'success');
+  }
+
+  setTimeout(() => location.reload(), 3000);
 }
 
 async function rejectTransfer(transferId) {
@@ -413,53 +419,53 @@ async function verifyKYC(kycId, approved) {
 //  VIEW DISPUTE DETAILS
 // ══════════════════════════════════════════════════════
 async function viewDispute(disputeId) {
-    toast('Loading dispute details...', 'info');
-    
-    try {
-        // Fetch dispute details from API
-        const res = await api('/disputes/get', 'POST', { id: disputeId });
-        
-        if (!res.success) {
-            toast('Failed to load dispute details', 'error');
-            return;
-        }
-        
-        const d = res.data;
-        
-        // Build the modal
-        const existing = document.querySelector('.modal-overlay');
-        if (existing) existing.remove();
-        
-        const modal = document.createElement('div');
-        modal.className = 'modal-overlay';
-        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;';
-        
-        const statusColors = {
-            'open': 'badge-yellow',
-            'under_review': 'badge-blue',
-            'resolved_complainant': 'badge-green',
-            'resolved_respondent': 'badge-green',
-            'dismissed': 'badge-red'
-        };
-        
-        const statusLabels = {
-            'open': 'Open',
-            'under_review': 'Under Review',
-            'resolved_complainant': 'Resolved (Complainant)',
-            'resolved_respondent': 'Resolved (Respondent)',
-            'dismissed': 'Dismissed'
-        };
-        
-        const typeLabels = {
-            'ownership': 'Ownership',
-            'boundary': 'Boundary',
-            'fraud': 'Fraud / Forgery',
-            'transfer': 'Unauthorized Transfer',
-            'public_land': 'Public Land',
-            'other': 'Other'
-        };
-        
-        modal.innerHTML = `
+  toast('Loading dispute details...', 'info');
+
+  try {
+    // Fetch dispute details from API
+    const res = await api('/disputes/get', 'POST', { id: disputeId });
+
+    if (!res.success) {
+      toast('Failed to load dispute details', 'error');
+      return;
+    }
+
+    const d = res.data;
+
+    // Build the modal
+    const existing = document.querySelector('.modal-overlay');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;';
+
+    const statusColors = {
+      'open': 'badge-yellow',
+      'under_review': 'badge-blue',
+      'resolved_complainant': 'badge-green',
+      'resolved_respondent': 'badge-green',
+      'dismissed': 'badge-red'
+    };
+
+    const statusLabels = {
+      'open': 'Open',
+      'under_review': 'Under Review',
+      'resolved_complainant': 'Resolved (Complainant)',
+      'resolved_respondent': 'Resolved (Respondent)',
+      'dismissed': 'Dismissed'
+    };
+
+    const typeLabels = {
+      'ownership': 'Ownership',
+      'boundary': 'Boundary',
+      'fraud': 'Fraud / Forgery',
+      'transfer': 'Unauthorized Transfer',
+      'public_land': 'Public Land',
+      'other': 'Other'
+    };
+
+    modal.innerHTML = `
             <div style="background:var(--surface,#1a1f25);border:1px solid var(--border,#242c35);border-radius:12px;padding:28px;max-width:650px;width:90%;max-height:85vh;overflow-y:auto;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
                     <h3 style="font-family:Syne,sans-serif;color:#e8edf2;margin:0;">⚖️ Dispute #${d.id}</h3>
@@ -576,23 +582,23 @@ async function viewDispute(disputeId) {
                 ` : ''}
             </div>
         `;
-        
-        document.body.appendChild(modal);
-        modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
-        
-    } catch (err) {
-        console.error('View dispute error:', err);
-        toast('Failed to load dispute details', 'error');
-    }
+
+    document.body.appendChild(modal);
+    modal.addEventListener('click', function (e) { if (e.target === modal) modal.remove(); });
+
+  } catch (err) {
+    console.error('View dispute error:', err);
+    toast('Failed to load dispute details', 'error');
+  }
 }
 function resolveDispute(disputeId) {
-    const existing = document.querySelector('.modal-overlay');
-    if (existing) existing.remove();
+  const existing = document.querySelector('.modal-overlay');
+  if (existing) existing.remove();
 
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000;';
-    modal.innerHTML = `
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:1000;';
+  modal.innerHTML = `
         <div style="background:#1a1f25;border:1px solid #242c35;border-radius:12px;padding:28px;max-width:500px;width:90%;">
             <h3 style="font-family:Syne,sans-serif;color:#e8edf2;margin-bottom:16px;">Resolve Dispute #${disputeId}</h3>
             
@@ -624,64 +630,64 @@ function resolveDispute(disputeId) {
             </div>
         </div>
     `;
-    document.body.appendChild(modal);
-    modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+  modal.addEventListener('click', function (e) { if (e.target === modal) modal.remove(); });
 }
 
 async function submitResolution(disputeId) {
-    const status = document.getElementById('resolveOutcome').value;
-    const outcome = document.getElementById('resolveOwnership').value;
-    const notes = document.getElementById('resolveNotes').value.trim();
-    
-    if (!notes) {
-        toast('Please enter resolution notes.', 'warn');
-        return;
-    }
-    
-    // Close modal
-    document.querySelector('.modal-overlay').remove();
-    
-    toast('Resolving dispute...', 'info');
-    
-    const res = await api('/disputes/resolve', 'POST', {
-        dispute_id: disputeId,
-        status: status,
-        outcome: outcome,
-        notes: notes
-    });
-    
-    if (res.success) {
-        if (outcome === 'ownership_changed' && window.ethereum) {
-            toast('Ownership change requires blockchain. Connecting wallet...', 'info');
-            
-            try {
-                const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-                const provider = new ethers.BrowserProvider(window.ethereum);
-                const signer = await provider.getSigner();
-                const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-                
-                toast('Confirm transaction in MetaMask...', 'info');
-                const tx = await contract.updateOwnershipAfterDispute(
-                    res.data.document_hash,
-                    res.data.new_owner_wallet,
-                    notes
-                );
-                await tx.wait();
-                toast('✅ Dispute resolved & recorded on blockchain!', 'success');
-            } catch (err) {
-                if (err.code === 4001) {
-                    toast('⚠️ Transaction rejected. Dispute resolved in database only.', 'warn');
-                } else {
-                    toast('⚠️ Blockchain error: ' + (err.reason || err.message), 'warn');
-                }
-            }
+  const status = document.getElementById('resolveOutcome').value;
+  const outcome = document.getElementById('resolveOwnership').value;
+  const notes = document.getElementById('resolveNotes').value.trim();
+
+  if (!notes) {
+    toast('Please enter resolution notes.', 'warn');
+    return;
+  }
+
+  // Close modal
+  document.querySelector('.modal-overlay').remove();
+
+  toast('Resolving dispute...', 'info');
+
+  const res = await api('/disputes/resolve', 'POST', {
+    dispute_id: disputeId,
+    status: status,
+    outcome: outcome,
+    notes: notes
+  });
+
+  if (res.success) {
+    if (outcome === 'ownership_changed' && window.ethereum) {
+      toast('Ownership change requires blockchain. Connecting wallet...', 'info');
+
+      try {
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+
+        toast('Confirm transaction in MetaMask...', 'info');
+        const tx = await contract.updateOwnershipAfterDispute(
+          res.data.document_hash,
+          res.data.new_owner_wallet,
+          notes
+        );
+        await tx.wait();
+        toast('✅ Dispute resolved & recorded on blockchain!', 'success');
+      } catch (err) {
+        if (err.code === 4001) {
+          toast('⚠️ Transaction rejected. Dispute resolved in database only.', 'warn');
         } else {
-            toast('✅ Dispute resolved!', 'success');
+          toast('⚠️ Blockchain error: ' + (err.reason || err.message), 'warn');
         }
-        setTimeout(() => location.reload(), 2500);
+      }
     } else {
-        toast(res.data?.error || 'Resolution failed', 'error');
+      toast('✅ Dispute resolved!', 'success');
     }
+    setTimeout(() => location.reload(), 2500);
+  } else {
+    toast(res.data?.error || 'Resolution failed', 'error');
+  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -808,48 +814,45 @@ function stopAutoRefresh() {
 
 // Refresh the currently active tab
 async function refreshCurrentTab() {
-  // Get current active tab
-  const activeTab = document.querySelector('.tab-content.active');
-  if (!activeTab) return;
+    const activeTab = document.querySelector('.tab-content.active');
+    if (!activeTab) return;
 
-  const tabId = activeTab.id.replace('tab-', '');
-  currentTab = tabId;
+    const tabId = activeTab.id.replace('tab-', '');
+    currentTab = tabId;
 
-  console.log('🔄 Auto-refreshing tab:', tabId);
+    // Update badge counts (always)
+    await updateBadges();
 
-  // Update badge counts
-  await updateBadges();
-
-  // Refresh specific tab content
-  switch (tabId) {
-    case 'overview':
-      await refreshOverviewStats();
-      break;
-    case 'registrations':
-      await refreshRegistrations();
-      break;
-    case 'kyc':
-      await refreshKYC();
-      break;
-    case 'transfers':
-      await refreshTransfers();
-      break;
-    case 'disputes':
-      await refreshDisputes();
-      break;
-  }
+    // Refresh specific tab content
+    switch (tabId) {
+        case 'registrations':
+            await refreshRegistrations();
+            break;
+        case 'kyc':
+            await refreshKYC();
+            break;
+        case 'transfers':
+            await refreshTransfers();
+            break;
+        case 'disputes':
+            await refreshDisputes();
+            break;
+        // ✅ Skip overview — PHP handles it on page load/reload
+    }
 }
 
 // Update badge counts in sidebar
 async function updateBadges() {
   try {
-    // Get pending counts
-    const [kycRes, regRes] = await Promise.all([
+    // Get all data
+    const [kycRes, regRes, transferRes, disputeRes] = await Promise.all([
       api('/kyc/pending', 'GET'),
-      api('/parcels/pending', 'GET')
+      api('/parcels/pending', 'GET'),
+      api('/transfers/all', 'GET'),
+      api('/disputes/all', 'GET')
     ]);
 
-    // Update KYC badge
+    // KYC badge - only pending
     const kycBadge = document.querySelector('.nav-item[onclick*="kyc"] .badge');
     if (kycBadge && kycRes.success) {
       const count = kycRes.data?.length || 0;
@@ -861,7 +864,7 @@ async function updateBadges() {
       }
     }
 
-    // Update registrations badge
+    // Registrations badge - only pending
     const regBadge = document.querySelector('.nav-item[onclick*="registrations"] .badge');
     if (regBadge && regRes.success) {
       const count = regRes.data?.length || 0;
@@ -873,12 +876,44 @@ async function updateBadges() {
       }
     }
 
-    // Update overview badge (combined)
+    // ✅ Transfers badge - only PENDING (not approved/rejected)
+    const transferBadge = document.querySelector('.nav-item[onclick*="transfers"] .badge');
+    if (transferBadge && transferRes.success) {
+      const pendingCount = transferRes.data.filter(t => t.status === 'pending').length;
+      if (pendingCount > 0) {
+        transferBadge.textContent = pendingCount;
+        transferBadge.className = 'badge badge-yellow';
+        transferBadge.style.display = 'inline';
+      } else {
+        transferBadge.style.display = 'none';
+      }
+    }
+
+    // ✅ Disputes badge - only OPEN or UNDER_REVIEW (not resolved/dismissed)
+    const disputeBadge = document.querySelector('.nav-item[onclick*="disputes"] .badge');
+    if (disputeBadge && disputeRes.success) {
+      const activeCount = disputeRes.data.filter(d => d.status === 'open' || d.status === 'under_review').length;
+      if (activeCount > 0) {
+        disputeBadge.textContent = activeCount;
+        disputeBadge.className = 'badge badge-red';
+        disputeBadge.style.display = 'inline';
+      } else {
+        disputeBadge.style.display = 'none';
+      }
+    }
+
+    // Overview badge - total pending items
     const overviewBadge = document.querySelector('.nav-item[onclick*="overview"] .badge');
-    if (overviewBadge && kycRes.success && regRes.success) {
-      const total = (kycRes.data?.length || 0) + (regRes.data?.length || 0);
+    if (overviewBadge) {
+      const kycCount = kycRes.success ? (kycRes.data?.length || 0) : 0;
+      const regCount = regRes.success ? (regRes.data?.length || 0) : 0;
+      const transferCount = transferRes.success ? transferRes.data.filter(t => t.status === 'pending').length : 0;
+      const disputeCount = disputeRes.success ? disputeRes.data.filter(d => d.status === 'open' || d.status === 'under_review').length : 0;
+      const total = kycCount + regCount + transferCount + disputeCount;
+
       if (total > 0) {
         overviewBadge.textContent = total;
+        overviewBadge.className = 'badge badge-red';
         overviewBadge.style.display = 'inline';
       } else {
         overviewBadge.style.display = 'none';
@@ -890,27 +925,11 @@ async function updateBadges() {
   }
 }
 
-// Refresh overview stats
+// Refresh overview stats — only update badges, not stat card numbers
 async function refreshOverviewStats() {
-  try {
-    const [kycRes, regRes, transferRes, disputeRes] = await Promise.all([
-      api('/kyc/pending', 'GET'),
-      api('/parcels/pending', 'GET'),
-      api('/transfers/all', 'GET'),
-      api('/disputes/all', 'GET')
-    ]);
-
-    // Update stat values
-    const statValues = document.querySelectorAll('#tab-overview .stat-value');
-    if (statValues.length >= 4) {
-      if (regRes.success) statValues[0].textContent = regRes.data?.length || 0;
-      if (kycRes.success) statValues[1].textContent = kycRes.data?.length || 0;
-      if (transferRes.success) statValues[2].textContent = transferRes.data?.length || 0;
-      if (disputeRes.success) statValues[3].textContent = disputeRes.data?.length || 0;
-    }
-  } catch (e) {
-    console.error('Stats refresh error:', e);
-  }
+    // ✅ Only update badge counts — the stat cards are rendered by PHP
+    // and we don't want JavaScript to overwrite them
+    await updateBadges();
 }
 
 // Refresh registrations tab

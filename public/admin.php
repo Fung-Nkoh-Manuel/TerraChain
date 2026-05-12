@@ -62,7 +62,7 @@ $disputes = $allDisputes;
     <div class="app-layout">
         <!-- Admin Sidebar -->
         <aside class="sidebar admin-sidebar">
-            <a href="/admin.php" class="sidebar-logo">
+            <a href="admin.php" class="sidebar-logo">
                 <span class="logo-icon">⚙️</span>
                 <span>Admin <span class="accent">Panel</span></span>
             </a>
