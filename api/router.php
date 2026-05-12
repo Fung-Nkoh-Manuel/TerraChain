@@ -30,6 +30,7 @@ try {
     require_once $basePath . '/../services/BlockchainService.php';
     require_once $basePath . '/../services/DocumentService.php';
     require_once $basePath . '/../services/NotificationService.php';
+    require_once $basePath . '/../services/MailService.php';
     require_once $basePath . '/../middleware/AuthMiddleware.php';
     require_once $basePath . '/../controllers/AuthController.php';
     require_once $basePath . '/../controllers/ParcelController.php';
@@ -62,6 +63,9 @@ $routes = [
     'POST /api/auth/logout'      => ['AuthController', 'logout'],
     'GET /api/auth/me'           => ['AuthController', 'me'],
     'POST /api/auth/wallet'      => ['AuthController', 'linkWallet'],
+    'POST /api/auth/verify-otp'  => ['AuthController', 'verifyOTP'],
+    'POST /api/auth/forgot-password' => ['AuthController', 'forgotPassword'],
+    'POST /api/auth/reset-password'  => ['AuthController', 'resetPassword'],
     
     // Parcels
     'POST /api/parcels/submit'   => ['ParcelController', 'submit'],
@@ -101,6 +105,9 @@ $routes = [
     
     // Upload
     'POST /api/upload' => ['UploadController', 'upload'],
+
+    // Public Stats
+    'GET /api/public/stats' => ['AuthController', 'getPublicStats'],
 ];
 
 $routeKey = $method . ' ' . $uri;

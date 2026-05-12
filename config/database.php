@@ -15,6 +15,14 @@ define('PINATA_JWT', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb
 define('PINATA_API_URL', 'https://api.pinata.cloud/pinning/pinFileToIPFS');
 define('PINATA_GATEWAY', 'https://gateway.pinata.cloud/ipfs/');
 
+// Email (SMTP)
+define('SMTP_HOST', 'smtp.gmail.com');
+define('SMTP_PORT', 587);
+define('SMTP_USER', 'terrachain16@gmail.com');
+define('SMTP_PASS', 'jwsc czhg ciuz gbwr');
+define('SMTP_FROM', 'terrachain16@gmail.com');
+define('SMTP_FROM_NAME', 'TerraChain');
+
 // Upload
 define('UPLOAD_DIR', __DIR__ . '/../uploads/');
 define('MAX_FILE_SIZE', 10 * 1024 * 1024); // 10MB

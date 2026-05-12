@@ -184,17 +184,27 @@ if (isset($_SESSION['user_id'])) {
     </div>
 
     <script>
-        // Load stats
+        // Load real-time stats from the database
         async function loadStats() {
             try {
-                const res = await fetch('api/parcels/all');
-                const data = await res.json();
-                if (data.success) {
-                    document.getElementById('statParcels').textContent = data.data.length;
+                const res = await fetch('../api/public/stats');
+                const result = await res.json();
+                if (result.success) {
+                    // Update Registered Parcels count
+                    const parcelEl = document.getElementById('statParcels');
+                    if (parcelEl) parcelEl.textContent = result.data.parcels.toLocaleString();
+                    
+                    // Update Verified Users count
+                    const userEl = document.getElementById('statUsers');
+                    if (userEl) userEl.textContent = result.data.users.toLocaleString();
                 }
-            } catch(e) {}
+            } catch(e) {
+                console.error("Failed to load landing stats:", e);
+            }
         }
-        loadStats();
+        
+        // Initial load
+        document.addEventListener('DOMContentLoaded', loadStats);
     </script>
     <script>
         // Remove hash on page load
