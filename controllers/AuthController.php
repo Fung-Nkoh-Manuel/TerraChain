@@ -192,30 +192,6 @@ class AuthController {
         $this->respond(true, ['message' => 'Wallet linked successfully']);
     }
 
-    /**
-     * GET /api/public/stats
-     * Get basic system stats for the landing page (No auth required)
-     */
-    public function getPublicStats(): void {
-        try {
-            $db = Database::getConnection();
-            
-            // 1. Count Registered Parcels (anything not rejected)
-            $stmtParcels = $db->query("SELECT COUNT(*) as count FROM parcels WHERE status IN ('owned', 'transferred', 'pending')");
-            $parcelsCount = $stmtParcels->fetch()['count'] ?? 0;
-            
-            // 2. Count Verified Users (KYC status = verified)
-            $stmtUsers = $db->query("SELECT COUNT(*) as count FROM kyc_records WHERE status = 'verified'");
-            $usersCount = $stmtUsers->fetch()['count'] ?? 0;
-            
-            $this->respond(true, [
-                'parcels' => (int)$parcelsCount,
-                'users' => (int)$usersCount
-            ]);
-        } catch (Exception $e) {
-            $this->respond(false, 'Failed to fetch stats', 500);
-        }
-    }
 
     /**
      * POST /api/auth/forgot-password

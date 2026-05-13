@@ -39,6 +39,7 @@ try {
     require_once $basePath . '/../controllers/DisputeController.php';
     require_once $basePath . '/../controllers/NotificationController.php';
     require_once $basePath . '/../controllers/UploadController.php';
+    require_once $basePath . '/../controllers/SystemController.php';
 } catch (Throwable $e) {
     http_response_code(500);
     echo json_encode([
@@ -106,8 +107,9 @@ $routes = [
     // Upload
     'POST /api/upload' => ['UploadController', 'upload'],
 
-    // Public Stats
-    'GET /api/public/stats' => ['AuthController', 'getPublicStats'],
+    // Public Endpoints
+    'GET /api/public/stats'   => ['SystemController', 'getStats'],
+    'POST /api/public/contact' => ['SystemController', 'contact'],
 ];
 
 $routeKey = $method . ' ' . $uri;

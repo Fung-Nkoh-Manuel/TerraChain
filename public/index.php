@@ -174,10 +174,10 @@ if (isset($_SESSION['user_id'])) {
                     <p>Secure Land Registry System © <?php echo date('Y'); ?></p>
                 </div>
                 <div class="footer-links">
-                    <a href="#">About</a>
-                    <a href="#">Privacy Policy</a>
-                    <a href="#">Terms of Service</a>
-                    <a href="#">Contact</a>
+                    <a href="about.php">About</a>
+                    <a href="privacy.php">Privacy Policy</a>
+                    <a href="terms.php">Terms of Service</a>
+                    <a href="contact.php">Contact</a>
                 </div>
             </div>
         </footer>

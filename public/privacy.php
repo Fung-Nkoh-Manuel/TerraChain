@@ -66,7 +66,7 @@ $loggedIn = isset($_SESSION['user_id']);
         <div class="card" style="background: #1a1f26; border-radius: 12px; padding: 24px; border: 1px solid #2d3748;">
             <h2 style="font-family:Syne,sans-serif;margin-bottom:12px; color: #fff;">5. Contact</h2>
             <p style="color:#8a9bb0;line-height:1.7;">
-                For privacy concerns, contact us at <a href="mailto:privacy@terrachain.gov" style="color:#00e5a0;">privacy@terrachain.gov</a>.
+                For privacy concerns, contact us at <a href="mailto:terrachain16@gmail.com" style="color:#00e5a0; text-decoration: none;">terrachain16@gmail.com</a>.
             </p>
         </div>
     </main>
