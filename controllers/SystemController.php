@@ -77,7 +77,13 @@ class SystemController {
 
     private function respond(bool $success, $data, int $code = 200): void {
         http_response_code($code);
-        echo json_encode(['success' => $success, 'data' => $data]);
+        $response = ['success' => $success];
+        if (!$success && is_string($data)) {
+            $response['error'] = $data;
+        } else {
+            $response['data'] = $data;
+        }
+        echo json_encode($response);
         exit;
     }
 }
