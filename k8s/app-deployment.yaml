@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: terrachain-app
+  namespace: terrachain
+spec:
+  selector:
+    app: terrachain
+  ports:
+    - port: 80
+      targetPort: 80
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: terrachain
+  namespace: terrachain
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: terrachain
+  template:
+    metadata:
+      labels:
+        app: terrachain
+    spec:
+      containers:
+        - name: app
+          image: terrachain:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 80
+          env:
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: terrachain-config
+                  key: DB_HOST
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: terrachain-config
+                  key: DB_NAME
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: terrachain-secrets
+                  key: DB_USER
+            - name: DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: terrachain-secrets
+                  key: DB_PASS
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"

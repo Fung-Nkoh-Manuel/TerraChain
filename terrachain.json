@@ -1,0 +1,400 @@
+{
+  "info": {
+    "name": "TerraChain API (With OTP)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost/terrachain-v2/api"
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "otpCode",
+      "value": ""
+    },
+    {
+      "key": "sessionCookie",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "1. Register",
+          "event": [],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/register",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"username\": \"testuser\",\n    \"email\": \"test@example.com\",\n    \"password\": \"password123\",\n    \"full_name\": \"Test User\",\n    \"phone\": \"+237 600 000 000\",\n    \"national_id\": \"CM123456\"\n}"
+            }
+          }
+        },
+        {
+          "name": "2. Login (Get OTP)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.success && jsonData.data.user_id) {",
+                  "    pm.collectionVariables.set('userId', jsonData.data.user_id);",
+                  "    console.log('User ID saved:', jsonData.data.user_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"username\": \"admin\",\n    \"password\": \"password\"\n}"
+            }
+          }
+        },
+        {
+          "name": "3. Verify OTP (Set otpCode variable first)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Save session cookie for subsequent requests",
+                  "var cookies = pm.cookies.toObject();",
+                  "if (cookies.PHPSESSID) {",
+                  "    pm.collectionVariables.set('sessionCookie', cookies.PHPSESSID);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/verify-otp",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"user_id\": {{userId}},\n    \"otp\": \"{{otpCode}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Me (Authenticated)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/me",
+            "header": [
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ]
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/logout",
+            "header": [
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ]
+          }
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/forgot-password",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"admin@terrachain.gov\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "KYC",
+      "item": [
+        {
+          "name": "KYC Status",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/kyc/status",
+            "header": [
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ]
+          }
+        },
+        {
+          "name": "Pending KYC (Admin)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/kyc/pending",
+            "header": [
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ]
+          }
+        },
+        {
+          "name": "Verify KYC (Admin)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/kyc/verify",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"kyc_id\": 1,\n    \"approved\": true\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Parcels",
+      "item": [
+        {
+          "name": "My Parcels",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/parcels/my",
+            "header": [
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ]
+          }
+        },
+        {
+          "name": "All Parcels",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/parcels/all",
+            "header": [
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ]
+          }
+        },
+        {
+          "name": "Pending Registrations (Admin)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/parcels/pending",
+            "header": [
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ]
+          }
+        },
+        {
+          "name": "Approve Registration (Admin)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/parcels/approve",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"registration_id\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Reject Registration (Admin)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/parcels/reject",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"registration_id\": 1,\n    \"reason\": \"Invalid documents\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Parcel Details",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/parcels/get?id=1",
+            "header": [
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Transfers",
+      "item": [
+        {
+          "name": "My Transfers",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/transfers/my",
+            "header": [
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ]
+          }
+        },
+        {
+          "name": "All Transfers (Admin)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/transfers/all",
+            "header": [
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ]
+          }
+        },
+        {
+          "name": "Request Transfer",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/transfers/request",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"parcel_number\": \"TC-ABC123-2024\",\n    \"recipient_email\": \"other@example.com\",\n    \"transfer_type\": \"sale\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Approve Transfer (Admin)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/transfers/approve",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"transfer_id\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Reject Transfer (Admin)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/transfers/reject",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"transfer_id\": 1,\n    \"reason\": \"Invalid transfer\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Disputes",
+      "item": [
+        {
+          "name": "All Disputes",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/disputes/all",
+            "header": [
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ]
+          }
+        },
+        {
+          "name": "File Dispute",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/disputes/file",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"parcel_number\": \"TC-ABC123\",\n    \"dispute_type\": \"ownership\",\n    \"description\": \"This land belongs to me\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Dispute Details (Admin)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/disputes/get",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"id\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Resolve Dispute (Admin)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/disputes/resolve",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"dispute_id\": 1,\n    \"status\": \"resolved_complainant\",\n    \"outcome\": \"no_change\",\n    \"notes\": \"After review, dispute resolved\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "List Notifications",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/notifications/list",
+            "header": [
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ]
+          }
+        },
+        {
+          "name": "Mark All Read",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/notifications/read-all",
+            "header": [
+              { "key": "Cookie", "value": "PHPSESSID={{sessionCookie}}" }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

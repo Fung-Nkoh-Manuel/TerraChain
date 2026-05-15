@@ -1,0 +1,17 @@
+{
+  "name": "terrachain-v2",
+  "version": "1.0.0",
+  "description": "TerraChain Land Registry System",
+  "main": "index.js",
+  "scripts": {
+    "test": "cypress run",
+    "cypress:open": "cypress open",
+    "cypress:run": "cypress run"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "cypress": "^15.15.0"
+  }
+}

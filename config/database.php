@@ -1,10 +1,11 @@
 <?php
 // config/database.php
 
-define('DB_HOST', 'localhost:5333');
-define('DB_NAME', 'terrachain_v2');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+// Use environment variables for Docker
+define('DB_HOST', getenv('DB_HOST') ?: 'localhost:3306');
+define('DB_NAME', getenv('DB_NAME') ?: 'terrachain_v2');
+define('DB_USER', getenv('DB_USER') ?: 'root');
+define('DB_PASS', getenv('DB_PASS') ?: '');
 define('DB_CHARSET', 'utf8mb4');
 
 // Session
@@ -39,6 +40,7 @@ define('ALLOWED_MIME_TYPES', [
 define('LAND_REGISTRY_CONTRACT', '0x8a8937bb4cea0a6e00102ed9b9fcf8217d311d04');
 define('RPC_URL', 'https://sepolia.drpc.org');
 define('BLOCKCHAIN_ENABLED', true); // Toggle for testing
+define('TEST_MODE', true); // SET TO FALSE IN PRODUCTION
 
 class Database {
     private static $instance = null;

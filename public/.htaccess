@@ -1,9 +1,9 @@
 RewriteEngine On
 
-# Don't rewrite if file or directory exists
-RewriteCond %{REQUEST_FILENAME} -f [OR]
-RewriteCond %{REQUEST_FILENAME} -d
-RewriteRule ^ - [L]
+# Route API requests
+RewriteRule ^api/(.*)$ ../api/router.php [QSA,L]
 
-# Route everything to index.php
+# If not a file or directory, route to index.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^(.*)$ index.php [QSA,L]

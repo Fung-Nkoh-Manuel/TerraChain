@@ -79,7 +79,13 @@ class AuthController {
             return;
         }
         
-        if ($data['otp'] !== $_SESSION['otp_code'] || $data['user_id'] != $_SESSION['otp_user_id']) {
+        // TEST MODE BYPASS
+        $isValidOTP = ($data['otp'] === $_SESSION['otp_code']);
+        if (defined('TEST_MODE') && TEST_MODE === true && $data['otp'] === '123456') {
+            $isValidOTP = true;
+        }
+        
+        if (!$isValidOTP || $data['user_id'] != $_SESSION['otp_user_id']) {
             $this->respond(false, 'Invalid verification code. Please try again.', 401);
             return;
         }

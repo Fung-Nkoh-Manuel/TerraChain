@@ -1,0 +1,12 @@
+.git
+.gitignore
+node_modules
+cypress
+cypress.config.js
+package.json
+package-lock.json
+README.md
+*.md
+.DS_Store
+uploads/*
+!uploads/.gitkeep
