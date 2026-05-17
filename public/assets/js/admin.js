@@ -618,6 +618,22 @@ function resolveDispute(disputeId) {
                     <option value="ownership_changed">Change Ownership (requires blockchain)</option>
                 </select>
             </div>
+
+            <!-- Dynamic New Owner Selection Section -->
+            <div id="ownershipSection" style="display:none;margin-bottom:14px;border:1px solid #242c35;border-radius:8px;padding:12px;background:#111418;">
+                <div style="margin-bottom:10px;">
+                    <label style="color:#8a9bb0;font-size:12px;display:block;margin-bottom:4px;">Assign New Owner To *</label>
+                    <select id="newOwnerSelection" style="width:100%;padding:8px;background:#1a1f25;border:1px solid #242c35;border-radius:6px;color:#e8edf2;">
+                        <option value="complainant">Complainant (Plaintiff)</option>
+                        <option value="respondent">Respondent (Defendant)</option>
+                        <option value="other">Other (Specify Email)</option>
+                    </select>
+                </div>
+                <div id="newOwnerEmailContainer" style="display:none;">
+                    <label style="color:#8a9bb0;font-size:12px;display:block;margin-bottom:4px;">New Owner's Email *</label>
+                    <input type="email" id="newOwnerEmail" placeholder="user@example.com" style="width:100%;padding:8px;background:#1a1f25;border:1px solid #242c35;border-radius:6px;color:#e8edf2;" />
+                </div>
+            </div>
             
             <div style="margin-bottom:14px;">
                 <label style="color:#8a9bb0;font-size:13px;display:block;margin-bottom:4px;">Notes *</label>
@@ -631,6 +647,38 @@ function resolveDispute(disputeId) {
         </div>
     `;
   document.body.appendChild(modal);
+
+  // Dynamic show/hide and auto-selection logic
+  const resolveOwnership = modal.querySelector('#resolveOwnership');
+  const resolveOutcome = modal.querySelector('#resolveOutcome');
+  const ownershipSection = modal.querySelector('#ownershipSection');
+  const newOwnerSelection = modal.querySelector('#newOwnerSelection');
+  const newOwnerEmailContainer = modal.querySelector('#newOwnerEmailContainer');
+
+  const updateOwnershipUI = () => {
+    if (resolveOwnership.value === 'ownership_changed') {
+      ownershipSection.style.display = 'block';
+      if (resolveOutcome.value === 'resolved_complainant') {
+        newOwnerSelection.value = 'complainant';
+      } else if (resolveOutcome.value === 'resolved_respondent') {
+        newOwnerSelection.value = 'respondent';
+      }
+    } else {
+      ownershipSection.style.display = 'none';
+    }
+  };
+
+  resolveOwnership.addEventListener('change', updateOwnershipUI);
+  resolveOutcome.addEventListener('change', updateOwnershipUI);
+
+  newOwnerSelection.addEventListener('change', function() {
+    if (newOwnerSelection.value === 'other') {
+      newOwnerEmailContainer.style.display = 'block';
+    } else {
+      newOwnerEmailContainer.style.display = 'none';
+    }
+  });
+
   modal.addEventListener('click', function (e) { if (e.target === modal) modal.remove(); });
 }
 
@@ -644,17 +692,33 @@ async function submitResolution(disputeId) {
     return;
   }
 
+  let payload = {
+    dispute_id: disputeId,
+    status: status,
+    outcome: outcome,
+    notes: notes
+  };
+
+  if (outcome === 'ownership_changed') {
+    const sel = document.getElementById('newOwnerSelection').value;
+    payload.new_owner_selection = sel;
+    if (sel === 'other') {
+      const email = document.getElementById('newOwnerEmail').value.trim();
+      if (!email) {
+        toast('Please enter the new owner email.', 'warn');
+        return;
+      }
+      payload.new_owner_email = email;
+    }
+  }
+
   // Close modal
   document.querySelector('.modal-overlay').remove();
 
   toast('Resolving dispute...', 'info');
 
-  const res = await api('/disputes/resolve', 'POST', {
-    dispute_id: disputeId,
-    status: status,
-    outcome: outcome,
-    notes: notes
-  });
+  const res = await api('/disputes/resolve', 'POST', payload);
+
 
   if (res.success) {
     if (outcome === 'ownership_changed' && window.ethereum) {

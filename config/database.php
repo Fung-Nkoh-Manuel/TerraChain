@@ -2,7 +2,7 @@
 // config/database.php
 
 // Use environment variables for Docker
-define('DB_HOST', getenv('DB_HOST') ?: 'localhost:3306');
+define('DB_HOST', getenv('DB_HOST') ?: '127.0.0.1:5333');
 define('DB_NAME', getenv('DB_NAME') ?: 'terrachain_v2');
 define('DB_USER', getenv('DB_USER') ?: 'root');
 define('DB_PASS', getenv('DB_PASS') ?: '');

@@ -131,6 +131,26 @@ class TransferController {
                 $result = $this->docService->processUpload($fileInfo);
                 $docHash = $result['sha256'];
                 $ipfsHash = $result['ipfs_hash'];
+                
+                // ═══════════════════════════════════════════════
+                // NEW: DUPLICATE DOCUMENT VALIDATION
+                // ═══════════════════════════════════════════════
+                $db = Database::getConnection();
+                
+                // 1. Check if this document was already used in another transfer
+                $stmtDup = $db->prepare("SELECT id FROM transfers WHERE doc_hash = ? AND status != 'rejected'");
+                $stmtDup->execute([$docHash]);
+                if ($stmtDup->fetch()) {
+                    $this->respond(false, "❌ DUPLICATE DOCUMENT: This transfer document has already been used in another transfer request. Please upload the unique agreement for this transaction.", 409);
+                    return;
+                }
+                
+                // 2. Check if the user is trying to use the original title deed as a transfer agreement
+                if ($docHash === $parcel['document_hash']) {
+                    $this->respond(false, "❌ INVALID DOCUMENT: You cannot use the original Land Title as the Transfer Agreement. Please upload the Sale Agreement or Transfer Deed signed by both parties.", 400);
+                    return;
+                }
+                
             } catch (Exception $e) {
                 $this->respond(false, 'Failed to upload supporting document: ' . $e->getMessage(), 400);
                 return;
