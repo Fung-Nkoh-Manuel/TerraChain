@@ -138,7 +138,7 @@ class TransferController {
                 $db = Database::getConnection();
                 
                 // 1. Check if this document was already used in another transfer
-                $stmtDup = $db->prepare("SELECT id FROM transfers WHERE doc_hash = ? AND status != 'rejected'");
+                $stmtDup = $db->prepare("SELECT id FROM transfers WHERE supporting_doc_hash = ? AND status != 'rejected'");
                 $stmtDup->execute([$docHash]);
                 if ($stmtDup->fetch()) {
                     $this->respond(false, "❌ DUPLICATE DOCUMENT: This transfer document has already been used in another transfer request. Please upload the unique agreement for this transaction.", 409);

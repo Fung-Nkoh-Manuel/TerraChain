@@ -30,7 +30,7 @@ spec:
       containers:
         - name: mysql
           image: mysql:8.0
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           env:
             - name: MYSQL_ROOT_PASSWORD
               value: "rootpassword"
