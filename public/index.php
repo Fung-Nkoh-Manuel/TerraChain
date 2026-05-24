@@ -201,10 +201,23 @@ if (isset($_SESSION['user_id'])) {
     </div>
 
     <script>
+        const API_BASE = (function () {
+            const path = window.location.pathname;
+            if (path.includes('/public/')) {
+                const base = path.substring(0, path.indexOf('/public/'));
+                return `${base}/public/api`;
+            }
+            const segments = path.split('/').filter(Boolean);
+            if (segments.length > 1) {
+                return `/${segments[0]}/api`;
+            }
+            return '/api';
+        })();
+
         // Load real-time stats from the database
         async function loadStats() {
             try {
-                const res = await fetch('../api/public/stats');
+                const res = await fetch(`${API_BASE}/public/stats`);
                 const result = await res.json();
                 if (result.success) {
                     // Update Registered Parcels count

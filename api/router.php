@@ -54,7 +54,10 @@ try {
 // Parse route
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $uri = rtrim($uri, '/');
-$uri = preg_replace('#^/terrachain-v2#', '', $uri);
+$apiPos = strpos($uri, '/api');
+if ($apiPos !== false) {
+    $uri = substr($uri, $apiPos);
+}
 $method = $_SERVER['REQUEST_METHOD'];
 
 $routes = [

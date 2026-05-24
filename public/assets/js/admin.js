@@ -2,7 +2,18 @@
 //  TerraChain v2 — Admin Panel JavaScript (Production)
 // ============================================================
 
-const API_BASE = '../api';
+const API_BASE = (function () {
+  const path = window.location.pathname;
+  if (path.includes('/public/')) {
+    const base = path.substring(0, path.indexOf('/public/'));
+    return `${base}/public/api`;
+  }
+  const segments = path.split('/').filter(Boolean);
+  if (segments.length > 1) {
+    return `/${segments[0]}/api`;
+  }
+  return '/api';
+})();
 const CONTRACT_ADDRESS = '0x8a8937bb4cea0a6e00102ed9b9fcf8217d311d04';
 
 // Only the functions we actually call from the contract

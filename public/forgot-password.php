@@ -59,6 +59,19 @@ unset($_SESSION['reset_error'], $_SESSION['reset_success']);
     </div>
 
     <script>
+        const API_BASE = (function () {
+            const path = window.location.pathname;
+            if (path.includes('/public/')) {
+                const base = path.substring(0, path.indexOf('/public/'));
+                return `${base}/public/api`;
+            }
+            const segments = path.split('/').filter(Boolean);
+            if (segments.length > 1) {
+                return `/${segments[0]}/api`;
+            }
+            return '/api';
+        })();
+
         document.getElementById('forgotForm')?.addEventListener('submit', async function(e) {
             e.preventDefault();
             const btn = document.getElementById('resetBtn');
@@ -72,7 +85,7 @@ unset($_SESSION['reset_error'], $_SESSION['reset_success']);
             const email = document.getElementById('email').value.trim();
             
             try {
-                const res = await fetch('../api/auth/forgot-password', {
+                const res = await fetch(`${API_BASE}/auth/forgot-password`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email: email })

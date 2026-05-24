@@ -64,6 +64,19 @@ if (!isset($_SESSION['reset_token']) || $_SESSION['reset_token'] !== $token || t
     </div>
 
     <script>
+        const API_BASE = (function () {
+            const path = window.location.pathname;
+            if (path.includes('/public/')) {
+                const base = path.substring(0, path.indexOf('/public/'));
+                return `${base}/public/api`;
+            }
+            const segments = path.split('/').filter(Boolean);
+            if (segments.length > 1) {
+                return `/${segments[0]}/api`;
+            }
+            return '/api';
+        })();
+
         document.getElementById('resetForm')?.addEventListener('submit', async function(e) {
             e.preventDefault();
             const password = document.getElementById('password').value;
@@ -86,7 +99,7 @@ if (!isset($_SESSION['reset_token']) || $_SESSION['reset_token'] !== $token || t
             const data = Object.fromEntries(formData.entries());
             
             try {
-                const res = await fetch('../api/auth/reset-password', {
+                const res = await fetch(`${API_BASE}/auth/reset-password`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)

@@ -257,6 +257,19 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
     
     <script src="assets/js/app.js"></script>
     <script>
+        const API_BASE = window.API_BASE || (function () {
+            const path = window.location.pathname;
+            if (path.includes('/public/')) {
+                const base = path.substring(0, path.indexOf('/public/'));
+                return `${base}/public/api`;
+            }
+            const segments = path.split('/').filter(Boolean);
+            if (segments.length > 1) {
+                return `/${segments[0]}/api`;
+            }
+            return '/api';
+        })();
+
         // Toast notification
         function toast(message, type = 'info') {
             let container = document.getElementById('toast-container');
@@ -327,12 +340,12 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
             try {
                 // Load from API instead of direct PHP file
                 const endpoints = {
-                    'my-properties': '../api/parcels/my',
+                    'my-properties': API_BASE + '/parcels/my',
                     'register': null,  // Form is inline
-                    'browse': '../api/parcels/all',
-                    'kyc': '../api/kyc/status',
-                    'transfers': '../api/transfers/my',
-                    'disputes': '../api/disputes/all',
+                    'browse': API_BASE + '/parcels/all',
+                    'kyc': API_BASE + '/kyc/status',
+                    'transfers': API_BASE + '/transfers/my',
+                    'disputes': API_BASE + '/disputes/all',
                     'profile': null
                 };
                 
@@ -569,7 +582,7 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                         // Upload to IPFS first
                         toast('Uploading documents to IPFS...', 'info');
                         
-                        const res = await fetch('../api/kyc/submit', {
+                        const res = await fetch(API_BASE + '/kyc/submit', {
                             method: 'POST',
                             body: formData,
                             credentials: 'same-origin'
@@ -802,7 +815,7 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                         if (respondentEmail) formData.append("respondent_email", respondentEmail);
                         formData.append("evidence", evidenceFile);
 
-                        const res = await fetch('../api/disputes/file', {
+                        const res = await fetch(API_BASE + '/disputes/file', {
                             method: 'POST',
                             body: formData,
                             credentials: 'same-origin'
@@ -811,7 +824,7 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                         handleDisputeResponse(data, modal);
                     } else {
                         // No file - send as JSON
-                        const res = await fetch('../api/disputes/file', {
+                        const res = await fetch(API_BASE + '/disputes/file', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -958,7 +971,7 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
                     try {
                         toast('Submitting registration...', 'info');
                         
-                        const res = await fetch('../api/parcels/submit', {
+                        const res = await fetch(API_BASE + '/parcels/submit', {
                             method: 'POST',
                             body: formData,
                             credentials: 'same-origin'
@@ -1021,7 +1034,7 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
         }
 
         async function loadProfileSection(el) {
-            const res = await fetch('../api/auth/me', { credentials: 'same-origin' });
+            const res = await fetch(API_BASE + '/auth/me', { credentials: 'same-origin' });
             const data = await res.json();
             const user = data.data?.user || {};
             
@@ -1090,7 +1103,7 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
 
         async function markAllRead() {
             try {
-                const res = await fetch('../api/notifications/read-all', { 
+                const res = await fetch(API_BASE + '/notifications/read-all', { 
                     method: 'POST',
                     credentials: 'same-origin' 
                 });
@@ -1118,7 +1131,7 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
 
         async function refreshNotifications() {
             try {
-                const res = await fetch('../api/notifications/list', {
+                const res = await fetch(API_BASE + '/notifications/list', {
                     credentials: 'same-origin'
                 });
                 const data = await res.json();
@@ -1164,7 +1177,7 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
 
         async function markSingleRead(notificationId) {
             try {
-                const res = await fetch('../api/notifications/mark-read-one', {
+                const res = await fetch(API_BASE + '/notifications/mark-read-one', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id: notificationId }),
@@ -1265,7 +1278,7 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
             
             try {
                 // ✅ Use the correct endpoint
-                const res = await fetch('../api/upload?action=parse', {
+                const res = await fetch(API_BASE + '/upload?action=parse', {
                     method: 'POST',
                     body: formData,
                     credentials: 'same-origin'
@@ -1526,7 +1539,7 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
             });
 
             // Fetch parcel data
-            fetch('../api/parcels/get?id=' + parcelId, { credentials: 'same-origin' })
+            fetch(API_BASE + '/parcels/get?id=' + parcelId, { credentials: 'same-origin' })
                 .then(res => res.json())
                 .then(data => {
                     if (data.success) {

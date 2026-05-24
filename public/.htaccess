@@ -1,7 +1,8 @@
 RewriteEngine On
 
 # Route API requests
-RewriteRule ^api/(.*)$ ../api/router.php [QSA,L]
+RewriteRule ^api/router\.php$ - [L]
+RewriteRule ^api/(.*)$ api/router.php [QSA,L]
 
 # If not a file or directory, route to index.php
 RewriteCond %{REQUEST_FILENAME} !-f

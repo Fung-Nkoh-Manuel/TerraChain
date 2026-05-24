@@ -204,4 +204,4 @@ CREATE INDEX idx_sessions_expiry     ON sessions(expires_at);
 -- ── SEED ADMIN ───────────────────────────────────────────────
 -- Password: Admin@123 (bcrypt hash)
 INSERT INTO users (username, email, password_hash, full_name, role, wallet_address) 
-VALUES ('admin', 'admin@terrachain.gov', '$2y$12$mUmCFN6AJHVnXt2NpEe6dejS.S8nVClsak42Lajkegk2BIFzwMH3q', 'System Administrator', 'admin', '0x31c27aA9E8b8a8b376de6CCd8133F0870F09740e');
+VALUES ('admin', 'terrachain16@gmail.com', '$2y$12$mUmCFN6AJHVnXt2NpEe6dejS.S8nVClsak42Lajkegk2BIFzwMH3q', 'System Administrator', 'admin', '0x31c27aA9E8b8a8b376de6CCd8133F0870F09740e');

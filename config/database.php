@@ -1,28 +1,59 @@
 <?php
 // config/database.php
 
-// Use environment variables for Docker
+// ── Load .env File Dynamically ──────────────────────────
+$envFile = __DIR__ . '/../.env';
+if (file_exists($envFile)) {
+    $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        $line = trim($line);
+        // Skip empty lines and comments
+        if (empty($line) || strpos($line, '#') === 0) {
+            continue;
+        }
+        $parts = explode('=', $line, 2);
+        if (count($parts) === 2) {
+            $name = trim($parts[0]);
+            $value = trim($parts[1]);
+            
+            // Strip quotes if present
+            if ((strpos($value, '"') === 0 && strrpos($value, '"') === strlen($value) - 1) ||
+                (strpos($value, "'") === 0 && strrpos($value, "'") === strlen($value) - 1)) {
+                $value = substr($value, 1, -1);
+            }
+            
+            // putenv sets system environment variable; respects existing ones
+            if (getenv($name) === false) {
+                putenv("{$name}={$value}");
+                $_ENV[$name] = $value;
+                $_SERVER[$name] = $value;
+            }
+        }
+    }
+}
+
+// Use environment variables for Docker / Kubernetes / Local
 define('DB_HOST', getenv('DB_HOST') ?: '127.0.0.1:5333');
 define('DB_NAME', getenv('DB_NAME') ?: 'terrachain_v2');
 define('DB_USER', getenv('DB_USER') ?: 'root');
-define('DB_PASS', getenv('DB_PASS') ?: '');
+define('DB_PASS', getenv('DB_PASS') !== false ? getenv('DB_PASS') : '');
 define('DB_CHARSET', 'utf8mb4');
 
 // Session
 define('SESSION_LIFETIME', 86400); // 24 hours
 
 // IPFS / Pinata
-define('PINATA_JWT', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiJiM2M3NDRjZC02OTU0LTQ1NzYtYjFlNy02YTM2M2Y3MmU2NDkiLCJlbWFpbCI6Im5leW1hNzcwNEBnbWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwicGluX3BvbGljeSI6eyJyZWdpb25zIjpbeyJkZXNpcmVkUmVwbGljYXRpb25Db3VudCI6MSwiaWQiOiJGUkExIn0seyJkZXNpcmVkUmVwbGljYXRpb25Db3VudCI6MSwiaWQiOiJOWUMxIn1dLCJ2ZXJzaW9uIjoxfSwibWZhX2VuYWJsZWQiOmZhbHNlLCJzdGF0dXMiOiJBQ1RJVkUifSwiYXV0aGVudGljYXRpb25UeXBlIjoic2NvcGVkS2V5Iiwic2NvcGVkS2V5S2V5IjoiZTMzOTk4NGViYzllNWIxNjhjYWUiLCJzY29wZWRLZXlTZWNyZXQiOiI1N2I5YjhkZGVhNTI1Y2M0YzY4ZGU5NGVhZDJiYzE1MjQ3NTIxNzExNmY1NGNmNTM2MmRjMGY0YTczOWZiZDI3IiwiZXhwIjoxODA0ODM1NjQzfQ.LaNIuZ9VAcbcu0MrKzBa9XxNvLiPL1M2sxJfdV9XYW8');
+define('PINATA_JWT', getenv('PINATA_JWT') ?: '');
 define('PINATA_API_URL', 'https://api.pinata.cloud/pinning/pinFileToIPFS');
 define('PINATA_GATEWAY', 'https://gateway.pinata.cloud/ipfs/');
 
 // Email (SMTP)
-define('SMTP_HOST', 'smtp.gmail.com');
-define('SMTP_PORT', 587);
-define('SMTP_USER', 'terrachain16@gmail.com');
-define('SMTP_PASS', 'jwsc czhg ciuz gbwr');
-define('SMTP_FROM', 'terrachain16@gmail.com');
-define('SMTP_FROM_NAME', 'TerraChain');
+define('SMTP_HOST', getenv('SMTP_HOST') ?: 'smtp.gmail.com');
+define('SMTP_PORT', getenv('SMTP_PORT') ?: 587);
+define('SMTP_USER', getenv('SMTP_USER') ?: '');
+define('SMTP_PASS', getenv('SMTP_PASS') ?: '');
+define('SMTP_FROM', getenv('SMTP_FROM') ?: '');
+define('SMTP_FROM_NAME', getenv('SMTP_FROM_NAME') ?: 'TerraChain');
 
 // Upload
 define('UPLOAD_DIR', __DIR__ . '/../uploads/');
@@ -47,7 +78,8 @@ class Database {
     
     public static function getConnection(): PDO {
         if (self::$instance === null) {
-            $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
+            $port = getenv('DB_PORT') ?: '';
+            $dsn = "mysql:host=" . DB_HOST . ($port ? ";port=" . $port : "") . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
             $options = [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,

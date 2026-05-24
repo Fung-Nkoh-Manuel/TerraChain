@@ -96,6 +96,19 @@ $loggedIn = isset($_SESSION['user_id']);
     </footer>
 
     <script>
+        const API_BASE = (function () {
+            const path = window.location.pathname;
+            if (path.includes('/public/')) {
+                const base = path.substring(0, path.indexOf('/public/'));
+                return `${base}/public/api`;
+            }
+            const segments = path.split('/').filter(Boolean);
+            if (segments.length > 1) {
+                return `/${segments[0]}/api`;
+            }
+            return '/api';
+        })();
+
         document.getElementById('contactForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             const btn = document.getElementById('submitBtn');
@@ -116,7 +129,7 @@ $loggedIn = isset($_SESSION['user_id']);
             };
             
             try {
-                const res = await fetch('../api/public/contact', {
+                const res = await fetch(`${API_BASE}/public/contact`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(formData)

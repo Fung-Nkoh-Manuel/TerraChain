@@ -4,11 +4,16 @@
 
 // Detect the correct API path dynamically
 const API_BASE = (function () {
-  // If we're in /public/ folder, go up one level
-  if (window.location.pathname.includes('/public/')) {
-    return '../api';
+  const path = window.location.pathname;
+  if (path.includes('/public/')) {
+    const base = path.substring(0, path.indexOf('/public/'));
+    return `${base}/public/api`;
   }
-  return '/terrachain-v2/api';
+  const segments = path.split('/').filter(Boolean);
+  if (segments.length > 1) {
+    return `/${segments[0]}/api`;
+  }
+  return '/api';
 })();
 
 // ── Toast Notifications ──────────────────────────────
@@ -480,7 +485,7 @@ function markAllRead() {
 // ── Logout ───────────────────────────────────────────
 async function logout() {
   try {
-    await fetch("../api/auth/logout", {
+    await fetch(`${API_BASE}/auth/logout`, {
       method: "POST",
       credentials: "same-origin",
     });
