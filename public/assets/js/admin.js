@@ -14,7 +14,7 @@ const API_BASE = (function () {
   }
   return '/api';
 })();
-const CONTRACT_ADDRESS = '0x8a8937bb4cea0a6e00102ed9b9fcf8217d311d04';
+const CONTRACT_ADDRESS = '0x7589B43cea9A5061095d8e3a2C4413768A081A79';
 
 // Only the functions we actually call from the contract
 const CONTRACT_ABI = [
@@ -24,7 +24,12 @@ const CONTRACT_ABI = [
   "function verifyDocumentHash(string documentHash) view returns (bool exists, uint256 propertyId, address owner)",
   "function admin() view returns (address)",
   "function paused() view returns (bool)",
-  "function getTotalProperties() view returns (uint256)"
+  "function getTotalProperties() view returns (uint256)",
+  "function getOwnershipHistory(uint256 propertyId) view returns (tuple(address owner, uint256 fromTimestamp, uint256 toTimestamp)[])",
+  "function getOwnershipHistoryByHash(string documentHash) view returns (tuple(address owner, uint256 fromTimestamp, uint256 toTimestamp)[])",
+  "function getOwnershipChangeCount(uint256 propertyId) view returns (uint256)",
+  "function wasOwnerAtTime(uint256 propertyId, address owner, uint256 timestamp) view returns (bool)",
+  "function getCurrentOwner(uint256 propertyId) view returns (address)"
 ];
 
 let signer = null;
@@ -1204,4 +1209,229 @@ function formatDate(dateStr) {
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return dateStr;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// ══════════════════════════════════════════════════════
+//  PARCEL HISTORY & VERIFICATION
+// ══════════════════════════════════════════════════════
+
+let resolvedPropertyId = null;
+
+async function lookupParcelHistory() {
+  const query = document.getElementById('historyQuery').value.trim();
+  if (!query) {
+    toast('Please enter a Parcel ID or Document Hash', 'warn');
+    return;
+  }
+
+  const searchBtn = document.getElementById('historySearchBtn');
+  const resultsContainer = document.getElementById('historyResults');
+  const emptyState = document.getElementById('historyEmptyState');
+  
+  searchBtn.disabled = true;
+  searchBtn.textContent = 'Searching...';
+  
+  // Reset verification sub-tool
+  document.getElementById('verifyTimeResult').style.display = 'none';
+  document.getElementById('checkOwnerAddr').value = '';
+  document.getElementById('checkOwnerTime').value = '';
+
+  try {
+    const connected = await ensureWalletConnected();
+    if (!connected || !contract) {
+      toast('Please connect your Metamask wallet to search blockchain', 'error');
+      searchBtn.disabled = false;
+      searchBtn.textContent = 'Search';
+      return;
+    }
+
+    let isId = /^\d+$/.test(query);
+    let propertyId = null;
+    let documentHash = '';
+
+    if (isId) {
+      propertyId = parseInt(query, 10);
+    } else {
+      documentHash = query;
+    }
+
+    let history = [];
+    let changeCount = 0n;
+    let currentOwner = '';
+
+    if (isId) {
+      // Query by ID
+      try {
+        currentOwner = await contract.getCurrentOwner(propertyId);
+      } catch (err) {
+        console.error('Error fetching current owner:', err);
+      }
+      
+      try {
+        changeCount = await contract.getOwnershipChangeCount(propertyId);
+      } catch (err) {
+        console.error('Error fetching change count:', err);
+      }
+
+      try {
+        history = await contract.getOwnershipHistory(propertyId);
+      } catch (err) {
+        console.error('Error fetching ownership history:', err);
+        toast('Parcel not found or contract error', 'error');
+        throw err;
+      }
+    } else {
+      // Query by Document Hash
+      try {
+        const verification = await contract.verifyDocumentHash(documentHash);
+        if (verification.exists) {
+          propertyId = Number(verification.propertyId);
+          currentOwner = verification.owner;
+          
+          try {
+            changeCount = await contract.getOwnershipChangeCount(propertyId);
+          } catch (err) {
+            console.error('Error fetching change count:', err);
+          }
+        }
+      } catch (err) {
+        console.error('Error verifying document hash:', err);
+      }
+
+      try {
+        history = await contract.getOwnershipHistoryByHash(documentHash);
+      } catch (err) {
+        console.error('Error fetching ownership history by hash:', err);
+        toast('Document hash not found on-chain', 'error');
+        throw err;
+      }
+    }
+
+    resolvedPropertyId = propertyId;
+
+    // Display values
+    document.getElementById('resParcelId').textContent = propertyId !== null ? propertyId : 'N/A';
+    document.getElementById('resChangeCount').textContent = changeCount.toString();
+    
+    if (!currentOwner && history.length > 0) {
+      currentOwner = history[history.length - 1].owner;
+    }
+    document.getElementById('resCurrentOwner').textContent = currentOwner || 'N/A';
+
+    // Populate timeline
+    const timeline = document.getElementById('timelineContainer');
+    timeline.innerHTML = '';
+
+    if (history.length === 0) {
+      timeline.innerHTML = '<div style="color: var(--text3); font-size: 12px;">No transfer history found on-chain.</div>';
+    } else {
+      // Loop ownership history entries (reverse to show recent at the top)
+      const reversedHistory = [...history].reverse();
+      reversedHistory.forEach((entry, index) => {
+        const ownerAddr = entry.owner;
+        const fromTime = Number(entry.fromTimestamp);
+        const toTime = Number(entry.toTimestamp);
+
+        const fromDateStr = new Date(fromTime * 1000).toLocaleString();
+        let toDateStr = 'Present';
+        
+        if (toTime > 0 && toTime < 100000000000) { 
+          toDateStr = new Date(toTime * 1000).toLocaleString();
+        } else if (index > 0) {
+          const prevEntry = reversedHistory[index - 1];
+          toDateStr = new Date(Number(prevEntry.fromTimestamp) * 1000).toLocaleString();
+        }
+
+        const isCurrent = index === 0;
+
+        const entryEl = document.createElement('div');
+        entryEl.style.cssText = 'position: relative; margin-bottom: 4px;';
+        entryEl.innerHTML = `
+          <div style="position: absolute; left: -21px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: ${isCurrent ? '#00e5a0' : 'var(--border)'}; border: 2px solid var(--surface);"></div>
+          <div style="font-weight: 600; font-size: 12px; color: ${isCurrent ? '#00e5a0' : 'var(--text)'}; display: flex; align-items: center; gap: 6px;">
+            Owner: <span style="font-family: 'DM Mono', monospace; font-size: 11px;">${ownerAddr}</span>
+            ${isCurrent ? '<span class="badge badge-green" style="font-size: 9px; padding: 2px 6px;">Current</span>' : ''}
+          </div>
+          <div style="font-size: 11px; color: var(--text3); margin-top: 2px;">
+            🗓️ ${fromDateStr} — ${toDateStr}
+          </div>
+        `;
+        timeline.appendChild(entryEl);
+      });
+    }
+
+    resultsContainer.style.display = 'block';
+    emptyState.style.display = 'none';
+    
+    toast('History loaded successfully', 'success');
+  } catch (err) {
+    console.error('History lookup failed:', err);
+    resultsContainer.style.display = 'none';
+    emptyState.style.display = 'block';
+  } finally {
+    searchBtn.disabled = false;
+    searchBtn.textContent = 'Search';
+  }
+}
+
+async function verifyOwnershipAtTime() {
+  if (resolvedPropertyId === null) {
+    toast('Please search for a parcel history first', 'warn');
+    return;
+  }
+
+  const owner = document.getElementById('checkOwnerAddr').value.trim();
+  const datetime = document.getElementById('checkOwnerTime').value;
+
+  if (!owner || !ethers.isAddress(owner)) {
+    toast('Please enter a valid owner address', 'warn');
+    return;
+  }
+  if (!datetime) {
+    toast('Please select a date and time', 'warn');
+    return;
+  }
+
+  const verifyBtn = document.getElementById('verifyTimeBtn');
+  const resultContainer = document.getElementById('verifyTimeResult');
+  
+  verifyBtn.disabled = true;
+  verifyBtn.textContent = 'Verifying...';
+
+  try {
+    const timestamp = Math.floor(new Date(datetime).getTime() / 1000);
+    
+    const wasOwner = await contract.wasOwnerAtTime(resolvedPropertyId, owner, timestamp);
+
+    resultContainer.style.display = 'block';
+    if (wasOwner) {
+      resultContainer.innerHTML = `
+        <div class="badge badge-green" style="display: inline-block; padding: 8px 16px; font-size: 12px; font-weight: 600; width: 100%; border-radius: 6px;">
+          ✓ Confirmed: Was Owner At Selected Time
+        </div>
+      `;
+      toast('Ownership verified successfully: True', 'success');
+    } else {
+      resultContainer.innerHTML = `
+        <div class="badge badge-red" style="display: inline-block; padding: 8px 16px; font-size: 12px; font-weight: 600; width: 100%; border-radius: 6px;">
+          ✗ Rejected: Was NOT Owner At Selected Time
+        </div>
+      `;
+      toast('Ownership verified successfully: False', 'warn');
+    }
+  } catch (err) {
+    console.error('Verification error:', err);
+    toast('Error verifying ownership on-chain', 'error');
+  } finally {
+    verifyBtn.disabled = false;
+    verifyBtn.textContent = 'Verify Ownership';
+  }
+}
+
+function quickLookupHistory(hash) {
+  const queryInput = document.getElementById('historyQuery');
+  if (queryInput) {
+    queryInput.value = hash;
+    lookupParcelHistory();
+  }
 }

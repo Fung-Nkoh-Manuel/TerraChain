@@ -198,6 +198,7 @@ $disputes = $allDisputes;
                                         <th>Type</th>
                                         <th>Owner</th>
                                         <th>Status</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -209,6 +210,11 @@ $disputes = $allDisputes;
                                             <td><?php echo htmlspecialchars($parcel['property_type'] ?? $parcel['propertyType'] ?? 'N/A'); ?></td>
                                             <td><?php echo htmlspecialchars($parcel['owner_name'] ?? 'N/A'); ?></td>
                                             <td><?php echo statusBadge($parcel['status']); ?></td>
+                                            <td>
+                                                <button class="btn btn-sm btn-outline" onclick="quickLookupHistory('<?php echo htmlspecialchars($parcel['document_hash']); ?>')">
+                                                    🔍 History
+                                                </button>
+                                            </td>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
@@ -217,13 +223,79 @@ $disputes = $allDisputes;
                     <?php endif; ?>
                 </div>
                 
-                <!-- Recent Activity -->
+                <!-- Parcel History Lookup -->
                 <div class="card">
                     <div class="card-header">
-                        <h2>Recent Activity</h2>
+                        <h2>🔍 Parcel History & Verification</h2>
                     </div>
-                    <div id="activityLog">
-                        <div class="empty-state">Loading activity...</div>
+                    <div class="card-body" style="padding: 20px;">
+                        <p style="color: var(--text3); font-size: 13px; margin-bottom: 15px; line-height: 1.5;">
+                            Query the smart contract directly using Parcel ID or Document Hash to retrieve current ownership, complete historical timeline, change counters, and verify historical ownership at any timestamp.
+                        </p>
+                        
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label for="historyQuery" style="font-weight: 600; font-size: 12px; display: block; margin-bottom: 6px; color: var(--text2);">Parcel ID or Document Hash</label>
+                            <div style="display: flex; gap: 8px;">
+                                <input type="text" id="historyQuery" class="form-control" placeholder="e.g. 1 or Qm... / 0x..." style="flex: 1; padding: 10px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text);">
+                                <button class="btn btn-primary" onclick="lookupParcelHistory()" id="historySearchBtn">Search</button>
+                            </div>
+                        </div>
+
+                        <!-- Results Container -->
+                        <div id="historyResults" style="display: none; margin-top: 20px; border-top: 1px solid var(--border); padding-top: 20px;">
+                            <!-- Header Info -->
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+                                <div class="stat-card" style="padding: 12px; margin-bottom: 0; min-height: auto; background: rgba(255,255,255,0.01);">
+                                    <div class="stat-info">
+                                        <div class="stat-value" id="resChangeCount" style="font-size: 20px;">0</div>
+                                        <div class="stat-label" style="font-size: 11px;">Ownership Changes</div>
+                                    </div>
+                                </div>
+                                <div class="stat-card" style="padding: 12px; margin-bottom: 0; min-height: auto; background: rgba(255,255,255,0.01);">
+                                    <div class="stat-info">
+                                        <div class="stat-value" id="resParcelId" style="font-size: 20px;">-</div>
+                                        <div class="stat-label" style="font-size: 11px;">Resolved Parcel ID</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style="margin-bottom: 15px;">
+                                <label style="font-weight: 600; font-size: 12px; color: var(--text2); display: block; margin-bottom: 4px;">Current Owner Address</label>
+                                <div id="resCurrentOwner" style="font-family: 'DM Mono', monospace; font-size: 11px; background: rgba(0, 229, 160, 0.05); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(0, 229, 160, 0.2); word-break: break-all;">-</div>
+                            </div>
+
+                            <!-- Timeline -->
+                            <div style="margin-bottom: 25px;">
+                                <label style="font-weight: 600; font-size: 12px; color: var(--text2); display: block; margin-bottom: 10px;">Ownership Timeline</label>
+                                <div id="timelineContainer" style="display: flex; flex-direction: column; gap: 12px; border-left: 2px solid var(--border); padding-left: 15px; margin-left: 8px;">
+                                    <!-- Dynamic Timeline Entries -->
+                                </div>
+                            </div>
+
+                            <!-- Ownership at Time Verification Tool -->
+                            <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 15px; border-radius: var(--radius);">
+                                <h4 style="margin: 0 0 10px 0; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                                    ⏳ Historical Ownership Check
+                                </h4>
+                                <p style="color: var(--text3); font-size: 11px; margin-bottom: 12px;">
+                                    Verify if a specific address was the owner of this parcel at a particular date and time.
+                                </p>
+                                <div class="form-group" style="margin-bottom: 10px;">
+                                    <input type="text" id="checkOwnerAddr" class="form-control" placeholder="Owner Wallet Address (0x...)" style="width: 100%; padding: 8px; font-size: 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text); margin-bottom: 8px;">
+                                    <input type="datetime-local" id="checkOwnerTime" class="form-control" style="width: 100%; padding: 8px; font-size: 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text);">
+                                </div>
+                                <button class="btn btn-outline btn-sm" onclick="verifyOwnershipAtTime()" id="verifyTimeBtn" style="width: 100%; justify-content: center; font-size: 12px; padding: 8px;">
+                                    Verify Ownership
+                                </button>
+                                <div id="verifyTimeResult" style="display: none; margin-top: 10px; text-align: center;">
+                                    <!-- Result Badge -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="historyEmptyState" class="empty-state" style="padding: 40px 20px;">
+                            Enter a Parcel ID or Document Hash above to query history.
+                        </div>
                     </div>
                 </div>
             </div>
