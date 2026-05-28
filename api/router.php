@@ -112,6 +112,7 @@ $routes = [
 
     // Public Endpoints
     'GET /api/public/stats'   => ['SystemController', 'getStats'],
+    'GET /api/public/metrics' => ['SystemController', 'getMetrics'],
     'POST /api/public/contact' => ['SystemController', 'contact'],
 ];
 

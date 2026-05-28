@@ -75,6 +75,74 @@ class SystemController {
         }
     }
 
+    /**
+     * GET /api/public/metrics
+     * Exports application statistics in Prometheus exposition text format.
+     */
+    public function getMetrics(): void {
+        header('Content-Type: text/plain; version=0.0.4; charset=utf-8');
+        try {
+            $db = Database::getConnection();
+
+            // 1. Total parcels by status
+            $stmtParcels = $db->query("SELECT status, COUNT(*) as count FROM parcels GROUP BY status");
+            $parcels = $stmtParcels->fetchAll();
+            
+            $statuses = ['pending', 'owned', 'transferred', 'disputed', 'restricted', 'public_use', 'rejected'];
+            $parcelCounts = array_fill_keys($statuses, 0);
+            foreach ($parcels as $row) {
+                if (isset($parcelCounts[$row['status']])) {
+                    $parcelCounts[$row['status']] = (int)$row['count'];
+                }
+            }
+
+            // 2. Pending KYC
+            $stmtKyc = $db->query("SELECT COUNT(*) as count FROM kyc_records WHERE status = 'pending'");
+            $kycPending = $stmtKyc->fetch()['count'] ?? 0;
+
+            // 3. Pending Transfers
+            $stmtTransfers = $db->query("SELECT COUNT(*) as count FROM transfers WHERE status = 'pending'");
+            $transfersPending = $stmtTransfers->fetch()['count'] ?? 0;
+
+            // 4. Active Disputes
+            $stmtDisputes = $db->query("SELECT COUNT(*) as count FROM disputes WHERE status IN ('open', 'under_review')");
+            $disputesActive = $stmtDisputes->fetch()['count'] ?? 0;
+
+            // 5. Total Users
+            $stmtUsers = $db->query("SELECT COUNT(*) as count FROM users");
+            $usersTotal = $stmtUsers->fetch()['count'] ?? 0;
+
+            // Output metrics
+            echo "# HELP terrachain_parcels_total Total land parcels registered, grouped by status\n";
+            echo "# TYPE terrachain_parcels_total gauge\n";
+            foreach ($parcelCounts as $status => $count) {
+                echo "terrachain_parcels_total{status=\"$status\"} $count\n";
+            }
+
+            echo "\n# HELP terrachain_kyc_pending_total Total pending KYC verification requests\n";
+            echo "# TYPE terrachain_kyc_pending_total gauge\n";
+            echo "terrachain_kyc_pending_total $kycPending\n";
+
+            echo "\n# HELP terrachain_transfers_pending_total Total pending land transfer requests\n";
+            echo "# TYPE terrachain_transfers_pending_total gauge\n";
+            echo "terrachain_transfers_pending_total $transfersPending\n";
+
+            echo "\n# HELP terrachain_disputes_active_total Total active property disputes\n";
+            echo "# TYPE terrachain_disputes_active_total gauge\n";
+            echo "terrachain_disputes_active_total $disputesActive\n";
+
+            echo "\n# HELP terrachain_users_total Total registered users\n";
+            echo "# TYPE terrachain_users_total gauge\n";
+            echo "terrachain_users_total $usersTotal\n";
+
+            exit;
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo "# ERROR: Failed to gather metrics: " . $e->getMessage() . "\n";
+            exit;
+        }
+    }
+
     private function respond(bool $success, $data, int $code = 200): void {
         http_response_code($code);
         $response = ['success' => $success];

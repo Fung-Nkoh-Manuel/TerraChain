@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: 'TerraChain Dashboards'
+    orgId: 1
+    folder: 'TerraChain'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
