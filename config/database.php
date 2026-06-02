@@ -33,7 +33,8 @@ if (file_exists($envFile)) {
 }
 
 // Use environment variables for Docker / Kubernetes / Local
-define('DB_HOST', getenv('DB_HOST') ?: '127.0.0.1:5333');
+define('DB_HOST', getenv('DB_HOST') ?: '127.0.0.1');
+define('DB_PORT', getenv('DB_PORT') ?: '5333');
 define('DB_NAME', getenv('DB_NAME') ?: 'terrachain_v2');
 define('DB_USER', getenv('DB_USER') ?: 'root');
 define('DB_PASS', getenv('DB_PASS') !== false ? getenv('DB_PASS') : '');
@@ -79,7 +80,7 @@ class Database {
     public static function getConnection(): PDO {
         if (self::$instance === null) {
             $port = getenv('DB_PORT') ?: '';
-            $dsn = "mysql:host=" . DB_HOST . ($port ? ";port=" . $port : "") . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
+            $dsn = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
             $options = [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,

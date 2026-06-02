@@ -16,7 +16,7 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'server-password', variable: 'ANSIBLE_PASS')]) {
                     bat """
-                        wsl -d kali-linux bash -c "cd /mnt/c/xampp/htdocs/ansible && sshpass -p '${ANSIBLE_PASS}' ansible-playbook -i inventory/hosts.ini site.yml --user=webadmin --ask-become-pass"
+                        wsl -d kali-linux bash -c "cd /mnt/c/xampp/htdocs/terrachain-ansible && sshpass -p '${ANSIBLE_PASS}' ansible-playbook -i inventory/hosts.ini site.yml --user=webadmin --ask-become-pass"
                     """
                 }
             }
