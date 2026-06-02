@@ -72,7 +72,7 @@ define('ALLOWED_MIME_TYPES', [
 define('LAND_REGISTRY_CONTRACT', '0x7589B43cea9A5061095d8e3a2C4413768A081A79');
 define('RPC_URL', 'https://sepolia.drpc.org');
 define('BLOCKCHAIN_ENABLED', true); // Toggle for testing
-define('TEST_MODE', true); // SET TO FALSE IN PRODUCTION
+define('TEST_MODE', false); // SET TO FALSE IN PRODUCTION
 
 class Database {
     private static $instance = null;
