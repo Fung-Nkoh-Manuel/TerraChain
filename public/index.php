@@ -7,7 +7,7 @@ session_start();
 // - Set to true to show the button (adding it).
 // - Set to false to hide the button (simulating initial state / removing it).
 // =========================================================================
-$ENABLE_CLOSER_BUTTON =true; 
+$ENABLE_CLOSER_BUTTON = false; 
 
 // Safety net: you can also toggle it via URL query parameter (e.g., ?closer=0 or ?closer=1)
 if (isset($_GET['closer'])) {
