@@ -98,7 +98,7 @@ unset($_SESSION['login_error']);
     </div>
 
     <script>
-        const API_BASE = (function () {
+       var API_BASE = (function () {
             const path = window.location.pathname;
             if (path.includes('/public/')) {
                 const base = path.substring(0, path.indexOf('/public/'));
@@ -125,6 +125,7 @@ unset($_SESSION['login_error']);
             const spinner = btn.querySelector('.spinner');
             
             setLoading(btn, true);
+            
             
             const formData = new FormData(this);
             const data = {

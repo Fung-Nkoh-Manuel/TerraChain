@@ -31,6 +31,10 @@ class AuthMiddleware {
     public function requireAuth(): array {
         $user = $this->authenticate();
         if (!$user) {
+            if (!isset($_SERVER['HTTP_X_REQUESTED_WITH'])) {
+                header('Location: login.php');
+                exit;
+            }
             http_response_code(401);
             echo json_encode(['success' => false, 'error' => 'Not authenticated']);
             exit;
@@ -41,6 +45,11 @@ class AuthMiddleware {
     public function requireAdmin(): array {
         $user = $this->requireAuth();
         if ($user['role'] !== 'admin') {
+            // Browser request → redirect
+            if (!isset($_SERVER['HTTP_X_REQUESTED_WITH'])) {
+                header('Location: dashboard.php');
+                exit;
+            }
             http_response_code(403);
             echo json_encode(['success' => false, 'error' => 'Admin access required']);
             exit;

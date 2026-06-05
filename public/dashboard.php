@@ -257,7 +257,7 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
     
     <script src="assets/js/app.js"></script>
     <script>
-        const API_BASE = window.API_BASE || (function () {
+         API_BASE = window.API_BASE || (function () {
             const path = window.location.pathname;
             if (path.includes('/public/')) {
                 const base = path.substring(0, path.indexOf('/public/'));

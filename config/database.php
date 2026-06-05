@@ -69,10 +69,10 @@ define('ALLOWED_MIME_TYPES', [
 ]);
 
 // Blockchain (Admin-only interactions)
-define('LAND_REGISTRY_CONTRACT', '0x7589B43cea9A5061095d8e3a2C4413768A081A79');
+define('LAND_REGISTRY_CONTRACT', getenv('LAND_REGISTRY_CONTRACT') ?: '0x951b87030dDFf82467f80Fd6e808F6Ac3286C12d');
 define('RPC_URL', 'https://sepolia.drpc.org');
 define('BLOCKCHAIN_ENABLED', true); // Toggle for testing
-define('TEST_MODE', false); // SET TO FALSE IN PRODUCTION
+define('TEST_MODE', getenv('TEST_MODE') !== false ? filter_var(getenv('TEST_MODE'), FILTER_VALIDATE_BOOLEAN) : false);
 
 class Database {
     private static $instance = null;
