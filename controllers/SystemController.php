@@ -143,6 +143,37 @@ class SystemController {
         }
     }
 
+    /**
+     * GET /api/public/wallet-user
+     */
+    public function getUserByWallet(): void {
+        try {
+            $walletInput = $_GET['wallet'] ?? '';
+            if (empty($walletInput)) {
+                $this->respond(false, 'Wallet address required', 400);
+                return;
+            }
+
+            $wallets = explode(',', $walletInput);
+            $userModel = new User();
+            $result = [];
+
+            foreach ($wallets as $wallet) {
+                $wallet = trim($wallet);
+                if (empty($wallet)) {
+                    continue;
+                }
+                
+                $user = $userModel->findByWalletAddress($wallet);
+                $result[strtolower($wallet)] = ($user && !empty($user['full_name'])) ? $user['full_name'] : null;
+            }
+
+            $this->respond(true, $result);
+        } catch (Exception $e) {
+            $this->respond(false, 'Failed to fetch user by wallet: ' . $e->getMessage(), 500);
+        }
+    }
+
     private function respond(bool $success, $data, int $code = 200): void {
         http_response_code($code);
         $response = ['success' => $success];

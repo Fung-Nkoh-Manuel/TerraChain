@@ -113,6 +113,7 @@ $routes = [
     // Public Endpoints
     'GET /api/public/stats'   => ['SystemController', 'getStats'],
     'GET /api/public/metrics' => ['SystemController', 'getMetrics'],
+    'GET /api/public/wallet-user' => ['SystemController', 'getUserByWallet'],
     'POST /api/public/contact' => ['SystemController', 'contact'],
 ];
 

@@ -1309,14 +1309,52 @@ async function lookupParcelHistory() {
 
     resolvedPropertyId = propertyId;
 
+    if (!currentOwner && history.length > 0) {
+      currentOwner = history[history.length - 1].owner;
+    }
+
+    // Resolve user names for all wallet addresses in history and current owner
+    const uniqueWallets = new Set();
+    if (currentOwner) uniqueWallets.add(currentOwner.toLowerCase());
+    history.forEach(entry => {
+      if (entry.owner) uniqueWallets.add(entry.owner.toLowerCase());
+    });
+
+    let walletNames = {};
+    if (uniqueWallets.size > 0) {
+      try {
+        const walletsQuery = Array.from(uniqueWallets).join(',');
+        const nameRes = await api(`/public/wallet-user?wallet=${walletsQuery}`);
+        if (nameRes.success) {
+          walletNames = nameRes.data || {};
+        }
+      } catch (err) {
+        console.error('Error resolving wallet names:', err);
+      }
+    }
+
+    const getDisplayName = (addr) => {
+      if (!addr) return 'N/A';
+      const addrLower = addr.toLowerCase();
+      const shortAddr = addr.substring(0, 6) + '...' + addr.substring(38);
+      if (walletNames[addrLower]) {
+        return `${walletNames[addrLower]} (${shortAddr})`;
+      }
+      return shortAddr;
+    };
+
     // Display values
     document.getElementById('resParcelId').textContent = propertyId !== null ? propertyId : 'N/A';
     document.getElementById('resChangeCount').textContent = changeCount.toString();
     
-    if (!currentOwner && history.length > 0) {
-      currentOwner = history[history.length - 1].owner;
+    const currentOwnerEl = document.getElementById('resCurrentOwner');
+    if (currentOwner) {
+      currentOwnerEl.textContent = getDisplayName(currentOwner);
+      currentOwnerEl.title = currentOwner;
+    } else {
+      currentOwnerEl.textContent = 'N/A';
+      currentOwnerEl.removeAttribute('title');
     }
-    document.getElementById('resCurrentOwner').textContent = currentOwner || 'N/A';
 
     // Populate timeline
     const timeline = document.getElementById('timelineContainer');
@@ -1349,7 +1387,7 @@ async function lookupParcelHistory() {
         entryEl.innerHTML = `
           <div style="position: absolute; left: -21px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: ${isCurrent ? '#00e5a0' : 'var(--border)'}; border: 2px solid var(--surface);"></div>
           <div style="font-weight: 600; font-size: 12px; color: ${isCurrent ? '#00e5a0' : 'var(--text)'}; display: flex; align-items: center; gap: 6px;">
-            Owner: <span style="font-family: 'DM Mono', monospace; font-size: 11px;">${ownerAddr}</span>
+            Owner: <span style="font-family: 'DM Mono', monospace; font-size: 11px;" title="${ownerAddr}">${getDisplayName(ownerAddr)}</span>
             ${isCurrent ? '<span class="badge badge-green" style="font-size: 9px; padding: 2px 6px;">Current</span>' : ''}
           </div>
           <div style="font-size: 11px; color: var(--text3); margin-top: 2px;">

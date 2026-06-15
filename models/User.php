@@ -75,4 +75,10 @@ class User {
         $user = $this->findById($userId);
         return $user && $user['role'] === 'admin';
     }
+
+    public function findByWalletAddress(string $walletAddress): ?array {
+        $stmt = $this->db->prepare('SELECT id, username, email, full_name, role, wallet_address FROM users WHERE LOWER(wallet_address) = ? AND is_active = 1');
+        $stmt->execute([strtolower($walletAddress)]);
+        return $stmt->fetch() ?: null;
+    }
 }

@@ -8,7 +8,7 @@ describe("Contact Form", () => {
     cy.get("#message").type("Hello! This is an automated test of the new secure contact form.");
 
     cy.get("#submitBtn").click();
-
+    
     // Verification: Look for the custom success message
     cy.contains("Message Sent!").should("be.visible");
     

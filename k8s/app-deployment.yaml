@@ -38,6 +38,8 @@ spec:
                 configMapKeyRef:
                   name: terrachain-config
                   key: DB_HOST
+            - name: DB_PORT # ← Add this
+              value: "3306"
             - name: DB_NAME
               valueFrom:
                 configMapKeyRef:
