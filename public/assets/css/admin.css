@@ -164,3 +164,9 @@ td .btn {
         flex-wrap: wrap;
     }
 }
+
+.document-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}

@@ -35,7 +35,7 @@ unset($_SESSION['login_error']);
             <p class="auth-subtitle" id="authSubtitle">Sign in to your TerraChain account</p>
             
             <?php if ($error): ?>
-                <div class="alert alert-error"><?php echo htmlspecialchars($error); ?></div>
+                <div class="alert alert-error" id="sessionError"><?php echo htmlspecialchars($error); ?></div>
             <?php endif; ?>
             
             <!-- Standard Login Form -->
@@ -69,6 +69,7 @@ unset($_SESSION['login_error']);
             <form id="otpForm" class="auth-form" style="display: none;">
                 <div class="alert alert-blue" id="otpMessage">
                     A verification code has been sent to your email.
+                    <span id="otpTimer" style="float: right; font-weight: bold;"></span>
                 </div>
                 <div class="form-group">
                     <label for="otp">Verification Code (6 digits)</label>
@@ -83,7 +84,7 @@ unset($_SESSION['login_error']);
                 </button>
 
                 <div class="auth-footer" style="margin-top: 1.5rem;">
-                    Didn't receive code? <a href="javascript:void(0)" onclick="location.reload()">Try again</a>
+                    Didn't receive code? <a href="javascript:void(0)" onclick="resendOTP()" id="resendLink">Resend OTP</a>
                 </div>
             </form>
             
@@ -98,7 +99,7 @@ unset($_SESSION['login_error']);
     </div>
 
     <script>
-       var API_BASE = (function () {
+        var API_BASE = (function () {
             const path = window.location.pathname;
             if (path.includes('/public/')) {
                 const base = path.substring(0, path.indexOf('/public/'));
@@ -115,17 +116,19 @@ unset($_SESSION['login_error']);
         const otpForm = document.getElementById('otpForm');
         const authTitle = document.getElementById('authTitle');
         const authSubtitle = document.getElementById('authSubtitle');
+        const otpTimer = document.getElementById('otpTimer');
+        let otpCountdown = null;
+        let otpTimeLeft = 120; // 2 minutes
 
         // Handle Initial Login
         loginForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             
             const btn = document.getElementById('loginBtn');
-            const btnText = btn.querySelector('.btn-text');
-            const spinner = btn.querySelector('.spinner');
-            
             setLoading(btn, true);
             
+            // ✅ Clear any existing error messages
+            removeError();
             
             const formData = new FormData(this);
             const data = {
@@ -150,8 +153,14 @@ unset($_SESSION['login_error']);
                         authTitle.textContent = 'Verify Identity';
                         authSubtitle.textContent = 'Enter the code sent to ' + result.data.email;
                         document.getElementById('otpUserId').value = result.data.user_id;
+                        document.getElementById('otp').focus();
+                        
+                        // Start 2-minute countdown
+                        startOTPTimer();
+                        
+                        // ✅ Clear session error
+                        await clearSessionError();
                     } else {
-                        // Direct login (if status wasn't otp_required)
                         window.location.href = result.data.user.role === 'admin' ? 'admin.php' : 'dashboard.php';
                     }
                 } else {
@@ -171,6 +180,9 @@ unset($_SESSION['login_error']);
             const btn = document.getElementById('verifyBtn');
             setLoading(btn, true);
             
+            // ✅ Clear any existing error
+            removeError();
+            
             const data = {
                 user_id: document.getElementById('otpUserId').value,
                 otp: document.getElementById('otp').value
@@ -188,7 +200,9 @@ unset($_SESSION['login_error']);
                 if (result.success) {
                     window.location.href = result.data.user.role === 'admin' ? 'admin.php' : 'dashboard.php';
                 } else {
-                    showError(result.data || result.error || 'Verification failed');
+                    showError(result.data || result.error || 'Invalid verification code. Please try again.');
+                    document.getElementById('otp').value = '';
+                    document.getElementById('otp').focus();
                 }
             } catch(err) {
                 showError('Network error. Please try again.');
@@ -197,22 +211,108 @@ unset($_SESSION['login_error']);
             }
         });
         
+        // ✅ Clear session error via API
+        async function clearSessionError() {
+            try {
+                await fetch(`${API_BASE}/auth/clear-error`, {
+                    method: 'POST'
+                });
+            } catch(e) {
+                // Silent fail - not critical
+            }
+        }
+        
+        // ✅ Remove error from UI
+        function removeError() {
+            const existing = document.querySelector('.alert-error');
+            if (existing) existing.remove();
+            
+            const sessionError = document.getElementById('sessionError');
+            if (sessionError) sessionError.remove();
+        }
+        
+        // ✅ Show error message
+        function showError(msg) {
+            removeError();
+            
+            const alert = document.createElement('div');
+            alert.className = 'alert alert-error';
+            alert.textContent = msg;
+            document.querySelector('.auth-card').insertBefore(alert, authTitle.nextSibling);
+        }
+        
+        // ✅ Start 2-minute countdown timer
+        function startOTPTimer() {
+            otpTimeLeft = 120; // 2 minutes
+            const resendLink = document.getElementById('resendLink');
+            resendLink.style.display = 'none'; // Hide resend link initially
+            
+            clearInterval(otpCountdown);
+            otpCountdown = setInterval(() => {
+                otpTimeLeft--;
+                
+                const mins = Math.floor(otpTimeLeft / 60);
+                const secs = otpTimeLeft % 60;
+                otpTimer.textContent = `⏱ ${mins}:${secs.toString().padStart(2, '0')}`;
+                
+                if (otpTimeLeft <= 0) {
+                    clearInterval(otpCountdown);
+                    otpTimer.textContent = '⏱ Expired';
+                    otpTimer.style.color = '#ef4444';
+                    resendLink.style.display = 'inline';
+                }
+            }, 1000);
+            
+            otpTimer.style.color = '#00e5a0';
+        }
+        
+        // ✅ Resend OTP
+        async function resendOTP() {
+            const userId = document.getElementById('otpUserId').value;
+            if (!userId) return;
+            
+            const resendLink = document.getElementById('resendLink');
+            const originalText = resendLink.textContent;
+            resendLink.textContent = '⏳ Sending...';
+            resendLink.style.pointerEvents = 'none';
+            
+            try {
+                const res = await fetch(`${API_BASE}/auth/resend-otp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId })
+                });
+                
+                const result = await res.json();
+                
+                if (result.success) {
+                    const msg = document.getElementById('otpMessage');
+                    msg.innerHTML = '🔑 New verification code sent to your email. <span id="otpTimer" style="float: right; font-weight: bold;"></span>';
+                    msg.className = 'alert alert-green';
+                    
+                    // Restart timer
+                    startOTPTimer();
+                    
+                    // Reset OTP input
+                    document.getElementById('otp').value = '';
+                    document.getElementById('otp').focus();
+                } else {
+                    showError(result.error || 'Failed to resend OTP. Please try again.');
+                }
+            } catch(err) {
+                showError('Network error. Please try again.');
+            } finally {
+                resendLink.textContent = 'Resend OTP';
+                resendLink.style.pointerEvents = 'auto';
+            }
+        }
+        
         function setLoading(btn, isLoading) {
             const btnText = btn.querySelector('.btn-text');
             const spinner = btn.querySelector('.spinner');
             btn.disabled = isLoading;
             if (btnText) btnText.style.display = isLoading ? 'none' : '';
             if (spinner) spinner.style.display = isLoading ? 'inline-block' : 'none';
-        }
-
-        function showError(msg) {
-            const existing = document.querySelector('.alert-error');
-            if (existing) existing.remove();
-            
-            const alert = document.createElement('div');
-            alert.className = 'alert alert-error';
-            alert.textContent = msg;
-            document.querySelector('.auth-card').insertBefore(alert, authTitle.nextSibling);
         }
         
         function togglePassword() {

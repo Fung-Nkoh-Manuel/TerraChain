@@ -20,7 +20,7 @@ class MailService {
                     <span style='font-family: \"DM Mono\", monospace; font-size: 42px; font-weight: 700; letter-spacing: 12px; color: #00e5a0; display: block;'>$otp</span>
                 </div>
                 
-                <p style='font-size: 14px; color: #64748b; margin-bottom: 0;'>This code is valid for <b>10 minutes</b>. If you did not request this code, please secure your account immediately.</p>
+                <p style='font-size: 14px; color: #64748b; margin-bottom: 0;'>This code is valid for <b>2 minutes</b>. If you did not request this code, please secure your account immediately.</p>
             </div>
             <div style='background: #1a1f26; padding: 20px; text-align: center; font-size: 12px; color: #64748b;'>
                 © " . date('Y') . " TerraChain Land Registry System. All rights reserved.

@@ -88,4 +88,41 @@ class Transfer {
         $this->db->prepare('UPDATE transfers SET status = "rejected", reviewed_by = ?, reviewed_at = NOW(), admin_notes = ? WHERE id = ?')
             ->execute([$reviewerId, $reason, $transferId]);
     }
+
+    /**
+     * Get documents associated with a transfer
+     */
+    public function getTransferDocuments(int $transferId): array {
+        $stmt = $this->db->prepare("
+            SELECT supporting_ipfs as ipfs_cid, supporting_doc_hash as document_hash, 'Transfer Agreement' as document_name
+            FROM transfers
+            WHERE id = ?
+        ");
+        $stmt->execute([$transferId]);
+        $row = $stmt->fetch();
+        
+        if ($row && (!empty($row['ipfs_cid']) || !empty($row['document_hash']))) {
+            return [$row];
+        }
+        return [];
+    }
+
+    /**
+     * Get transfer with sender and recipient details
+     */
+    public function getTransferWithDetails(int $transferId): ?array {
+        $stmt = $this->db->prepare("
+            SELECT t.*, 
+                   u1.full_name as sender_name, u1.email as sender_email,
+                   u2.full_name as recipient_name, u2.email as recipient_email,
+                   p.title as parcel_title, p.parcel_number
+            FROM transfers t
+            JOIN users u1 ON t.sender_id = u1.id
+            JOIN users u2 ON t.recipient_id = u2.id
+            JOIN parcels p ON t.parcel_id = p.id
+            WHERE t.id = ?
+        ");
+        $stmt->execute([$transferId]);
+        return $stmt->fetch() ?: null;
+    }
 }

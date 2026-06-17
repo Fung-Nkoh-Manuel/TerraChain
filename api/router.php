@@ -70,6 +70,8 @@ $routes = [
     'POST /api/auth/verify-otp'  => ['AuthController', 'verifyOTP'],
     'POST /api/auth/forgot-password' => ['AuthController', 'forgotPassword'],
     'POST /api/auth/reset-password'  => ['AuthController', 'resetPassword'],
+    'POST /api/auth/clear-error'     => ['AuthController', 'clearError'],
+    'POST /api/auth/resend-otp'      => ['AuthController', 'resendOTP'],
     
     // Parcels
     'POST /api/parcels/submit'   => ['ParcelController', 'submit'],
@@ -94,6 +96,7 @@ $routes = [
     'POST /api/transfers/reject'   => ['TransferController', 'reject'],
     'GET /api/transfers/my'        => ['TransferController', 'myTransfers'],
     'GET /api/transfers/all'       => ['TransferController', 'allTransfers'],
+    'GET /api/admin/get-transfer-details.php' => ['TransferController', 'getTransferDetails'],
     
     // Disputes
     'POST /api/disputes/file'    => ['DisputeController', 'file'],

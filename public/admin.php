@@ -107,9 +107,6 @@ $disputes = $allDisputes;
                         <?php echo $blockchain->isEnabled() ? 'ON' : 'OFF'; ?>
                     </span>
                 </a>
-                <a href="logout.php" class="nav-item">
-                    🚪 Sign Out
-                </a>
             </nav>
         </aside>
         
@@ -140,6 +137,14 @@ $disputes = $allDisputes;
                         <span class="status-dot"></span>
                         Sepolia Testnet
                     </div>
+                    
+                    <!-- Sign Out Button -->
+                    <a href="logout.php" class="btn-logout-header" title="Sign Out">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                            <path fill-rule="evenodd" d="M10 12.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 9.5 2h-8A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-2a.5.5 0 0 0 -1 0v2z"/>
+                            <path fill-rule="evenodd" d="M15.854 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 0 0-.708.708L14.293 7.5H5.5a.5.5 0 0 0 0 1h8.793l-2.147 2.146a.5.5 0 0 0 .708.708l3-3z"/>
+                        </svg>
+                    </a>
                 </div>
             </header>
             
@@ -451,6 +456,7 @@ $disputes = $allDisputes;
                                         <th>From</th>
                                         <th>To</th>
                                         <th>Type</th>
+                                        <th>Documents</th>
                                         <th>Status</th>
                                         <th>Actions</th>
                                     </tr>
@@ -459,10 +465,45 @@ $disputes = $allDisputes;
                                     <?php foreach ($pendingTransfers as $transfer): ?>
                                         <tr>
                                             <td>#<?php echo $transfer['id']; ?></td>
-                                            <td><?php echo htmlspecialchars($transfer['parcel_title']); ?></td>
+                                            <td>
+                                                <div><?php echo htmlspecialchars($transfer['parcel_title']); ?></div>
+                                                <small style="color: var(--text3); font-size: 10px;"><?php echo htmlspecialchars($transfer['parcel_number'] ?? ''); ?></small>
+                                            </td>
                                             <td><?php echo htmlspecialchars($transfer['sender_name']); ?></td>
                                             <td><?php echo htmlspecialchars($transfer['recipient_name']); ?></td>
                                             <td><?php echo ucfirst($transfer['transfer_type']); ?></td>
+                                            <td>
+                                                <?php 
+                                                // Fetch documents for this transfer
+                                                $transferDocs = $transferModel->getTransferDocuments($transfer['id']);
+                                                if (!empty($transferDocs)): 
+                                                ?>
+                                                    <div class="document-list">
+                                                        <?php foreach ($transferDocs as $doc): ?>
+                                                            <div class="doc-item" style="margin-bottom: 4px;">
+                                                                <?php if (!empty($doc['ipfs_cid'])): ?>
+                                                                    <a href="<?php echo 'https://gateway.pinata.cloud/ipfs/' . $doc['ipfs_cid']; ?>" 
+                                                                       target="_blank" class="btn btn-sm btn-outline" style="font-size: 10px; padding: 2px 8px;">
+                                                                        📎 <?php echo htmlspecialchars($doc['document_name'] ?? 'Document'); ?>
+                                                                    </a>
+                                                                    <small class="hash" style="display: block; font-size: 9px; color: var(--text3); margin-top: 2px;">
+                                                                        CID: <?php echo substr($doc['ipfs_cid'], 0, 12); ?>...
+                                                                    </small>
+                                                                <?php elseif (!empty($doc['document_hash'])): ?>
+                                                                    <span class="badge badge-blue" style="font-size: 9px;">📄 <?php echo htmlspecialchars($doc['document_name'] ?? 'Document'); ?></span>
+                                                                    <small class="hash" style="display: block; font-size: 9px; color: var(--text3); margin-top: 2px;">
+                                                                        SHA-256: <?php echo substr($doc['document_hash'], 0, 16); ?>...
+                                                                    </small>
+                                                                <?php else: ?>
+                                                                    <span class="text-muted" style="font-size: 10px;">No document</span>
+                                                                <?php endif; ?>
+                                                            </div>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                <?php else: ?>
+                                                    <span class="text-muted" style="font-size: 11px;">No documents</span>
+                                                <?php endif; ?>
+                                            </td>
                                             <td><span class="badge badge-<?php echo $transfer['status'] === 'pending' ? 'yellow' : ($transfer['status'] === 'approved' ? 'green' : 'red'); ?>"><?php echo ucfirst($transfer['status']); ?></span></td>
                                             <td>
                                                 <?php if ($transfer['status'] === 'pending'): ?>
@@ -473,6 +514,9 @@ $disputes = $allDisputes;
                                                         ✕ Reject
                                                     </button>
                                                 <?php endif; ?>
+                                                <button class="btn btn-sm btn-outline" onclick="viewTransferDetails(<?php echo $transfer['id']; ?>)">
+                                                    👁 View
+                                                </button>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
@@ -593,9 +637,21 @@ $disputes = $allDisputes;
             </div>
         </main>
     </div>
+
+    <!-- Transfer Details Modal -->
+    <div id="transferModal" class="modal-overlay" style="display:none;">
+        <div class="modal" style="max-width: 700px; width: 95%;">
+            <div class="modal-header">
+                <h2>Transfer Request Details</h2>
+                <button class="modal-close" onclick="closeModal('transferModal')">&times;</button>
+            </div>
+            <div class="modal-body" id="transferDetailsBody">
+                <!-- Populated by JavaScript -->
+            </div>
+        </div>
+    </div>
     
     <script src="assets/js/admin.js"></script>
-    </script>
 </body>
 </html>
 

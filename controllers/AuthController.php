@@ -11,6 +11,12 @@ class AuthController {
     }
     
     public function login(): void {
+        // Clear any previous login error
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        unset($_SESSION['login_error']);
+        
         $data = json_decode(file_get_contents('php://input'), true);
         
         if (empty($data['username']) || empty($data['password'])) {
@@ -37,7 +43,7 @@ class AuthController {
         $otp = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $_SESSION['otp_code'] = $otp;
         $_SESSION['otp_user_id'] = $user['id'];
-        $_SESSION['otp_expires'] = time() + 600; // 10 minutes
+        $_SESSION['otp_expires'] = time() + 120; // 2 minutes
         
         // 3. Send Email
         $mailService = new MailService();
@@ -198,6 +204,61 @@ class AuthController {
         $this->respond(true, ['message' => 'Wallet linked successfully']);
     }
 
+    /**
+     * POST /api/auth/clear-error
+     * Clears any stored login error from session
+     */
+    public function clearError(): void {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        unset($_SESSION['login_error']);
+        $this->respond(true, ['message' => 'Error cleared']);
+    }
+
+    /**
+     * POST /api/auth/resend-otp
+     * Resends a new OTP code
+     */
+    public function resendOTP(): void {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        
+        $data = json_decode(file_get_contents('php://input'), true);
+        
+        if (empty($data['user_id'])) {
+            $this->respond(false, 'User ID required', 400);
+            return;
+        }
+        
+        $userId = $data['user_id'];
+        $user = $this->userModel->findById($userId);
+        
+        if (!$user) {
+            $this->respond(false, 'User not found', 404);
+            return;
+        }
+        
+        // Generate new OTP
+        $otp = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $_SESSION['otp_code'] = $otp;
+        $_SESSION['otp_user_id'] = $user['id'];
+        $_SESSION['otp_expires'] = time() + 120; // 2 minutes
+        
+        // Send email
+        $mailService = new MailService();
+        $emailSent = $mailService->sendOTP($user['email'], $otp);
+        
+        if (!$emailSent) {
+            error_log("FAILED to resend OTP to {$user['email']}. OTP is: {$otp}");
+        }
+        
+        $this->respond(true, [
+            'message' => 'New verification code sent to your email.',
+            'expires_in' => 120
+        ]);
+    }
 
     /**
      * POST /api/auth/forgot-password

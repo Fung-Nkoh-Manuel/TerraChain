@@ -1020,6 +1020,25 @@ td .hash {
   background: rgba(0, 229, 160, 0.02);
 }
 
+.btn-logout-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg2);
+  color: var(--danger);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.btn-logout-header:hover {
+  background: rgba(255, 59, 92, 0.08);
+  border-color: rgba(255, 59, 92, 0.2);
+}
+
 /* ── Main Content ───────────────────────────────────── */
 .main-content {
   flex: 1;

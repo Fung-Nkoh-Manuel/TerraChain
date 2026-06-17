@@ -1473,3 +1473,82 @@ function quickLookupHistory(hash) {
     lookupParcelHistory();
   }
 }
+
+/**
+ * View transfer details with documents
+ */
+function viewTransferDetails(transferId) {
+  api(`/admin/get-transfer-details.php?id=${transferId}`)
+    .then(data => {
+      if (data.success) {
+        const transfer = data.transfer;
+        let html = `
+          <div class="transfer-info" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 20px;">
+            <div>
+              <p style="margin: 4px 0;"><strong>Parcel:</strong> ${transfer.parcel_title || 'N/A'}</p>
+              <p style="margin: 4px 0;"><strong>Parcel Number:</strong> ${transfer.parcel_number || 'N/A'}</p>
+              <p style="margin: 4px 0;"><strong>Transfer Type:</strong> <span class="badge badge-blue">${transfer.transfer_type ? transfer.transfer_type.toUpperCase() : 'N/A'}</span></p>
+              <p style="margin: 4px 0;"><strong>Status:</strong> <span class="badge badge-${transfer.status === 'pending' ? 'yellow' : 'green'}">${transfer.status || 'N/A'}</span></p>
+            </div>
+            <div>
+              <p style="margin: 4px 0;"><strong>From:</strong> ${transfer.sender_name || 'N/A'}</p>
+              <p style="margin: 4px 0;"><strong>Email:</strong> ${transfer.sender_email || 'N/A'}</p>
+              <p style="margin: 4px 0;"><strong>To:</strong> ${transfer.recipient_name || 'N/A'}</p>
+              <p style="margin: 4px 0;"><strong>Email:</strong> ${transfer.recipient_email || 'N/A'}</p>
+            </div>
+          </div>
+          <div style="margin-top: 15px;">
+            <strong>Supporting Documents:</strong>
+            <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+        `;
+        
+        if (transfer.documents && transfer.documents.length > 0) {
+          transfer.documents.forEach(doc => {
+            html += `
+              <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: rgba(255,255,255,0.03); border-radius: 6px; border: 1px solid var(--border);">
+                <span>📄</span>
+                <span style="flex: 1;">${doc.document_name || 'Document'}</span>
+                ${doc.ipfs_cid ? 
+                  `<a href="https://gateway.pinata.cloud/ipfs/${doc.ipfs_cid}" target="_blank" class="btn btn-sm btn-outline">View on IPFS</a>` : 
+                  doc.document_path ? 
+                  `<a href="${doc.document_path}" target="_blank" class="btn btn-sm btn-outline">View</a>` :
+                  `<span class="text-muted">No file</span>`
+                }
+                ${doc.document_hash ? `<small style="font-size: 9px; color: var(--text3);">Hash: ${doc.document_hash.substring(0, 16)}...</small>` : ''}
+              </div>
+            `;
+          });
+        } else {
+          html += `<span class="text-muted">No documents attached to this transfer</span>`;
+        }
+        
+        html += `
+            </div>
+          </div>
+          <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 20px;">
+            ${transfer.status === 'pending' ? `
+              <button class="btn btn-success" onclick="approveTransfer(${transfer.id}); closeModal('transferModal');">✓ Approve & Record</button>
+              <button class="btn btn-danger" onclick="rejectTransfer(${transfer.id}); closeModal('transferModal');">✕ Reject</button>
+            ` : ''}
+            <button class="btn btn-outline" onclick="closeModal('transferModal')">Close</button>
+          </div>
+        `;
+        
+        document.getElementById('transferDetailsBody').innerHTML = html;
+        document.getElementById('transferModal').style.display = 'flex';
+      } else {
+        toast('Failed to load transfer details', 'error');
+      }
+    })
+    .catch(error => {
+      console.error('Error:', error);
+      toast('Error loading transfer details', 'error');
+    });
+}
+
+/**
+ * Close modal
+ */
+function closeModal(modalId) {
+  document.getElementById(modalId).style.display = 'none';
+}

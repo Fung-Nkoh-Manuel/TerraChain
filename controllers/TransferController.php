@@ -404,6 +404,37 @@ class TransferController {
         return $address;
     }
     
+    /**
+     * GET /api/admin/get-transfer-details.php
+     */
+    public function getTransferDetails(): void {
+        $admin = $this->auth->requireAdmin();
+        
+        $transferId = $_GET['id'] ?? 0;
+        if (!$transferId) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'message' => 'Transfer ID required']);
+            exit;
+        }
+        
+        $transfer = $this->transferModel->getTransferWithDetails((int)$transferId);
+        if ($transfer) {
+            $documents = $this->transferModel->getTransferDocuments((int)$transferId);
+            $transfer['documents'] = $documents;
+            
+            http_response_code(200);
+            echo json_encode([
+                'success' => true,
+                'transfer' => $transfer
+            ]);
+            exit;
+        } else {
+            http_response_code(404);
+            echo json_encode(['success' => false, 'message' => 'Transfer not found']);
+            exit;
+        }
+    }
+    
     private function respond(bool $success, $data, int $code = 200): void {
         http_response_code($code);
         echo json_encode(['success' => $success, 'data' => $data]);
