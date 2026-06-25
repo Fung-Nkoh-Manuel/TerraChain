@@ -70,6 +70,189 @@ function toast(message, type = "info") {
   }, 5000);
 }
 
+// ─── OVERRIDE BROWSER ALERTS ──────────────────────────────
+
+// Override window.alert with toast
+window.alert = function(message) {
+    toast(String(message), 'info');
+};
+
+// Override window.confirm with custom modal
+window.confirm = function(message, title = 'Confirm') {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.style.cssText = `
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            animation: fadeIn 0.2s ease;
+        `;
+        
+        overlay.innerHTML = `
+            <div style="
+                background: var(--surface, #1a1f25);
+                border: 1px solid var(--border, #242c35);
+                border-radius: 12px;
+                padding: 28px 32px;
+                max-width: 440px;
+                width: 92%;
+                box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+            ">
+                <div style="text-align:center;margin-bottom:16px;">
+                    <div style="font-size:36px;">❓</div>
+                </div>
+                <h3 style="
+                    font-family: 'Syne', sans-serif;
+                    font-size: 17px;
+                    font-weight: 700;
+                    color: var(--text, #e8edf2);
+                    margin: 0 0 8px 0;
+                    text-align: center;
+                ">${escapeHtml(title)}</h3>
+                <p style="
+                    color: var(--text2, #8a9bb0);
+                    font-size: 14px;
+                    line-height: 1.6;
+                    text-align: center;
+                    margin: 0 0 24px 0;
+                ">${escapeHtml(message)}</p>
+                <div style="display:flex;gap:10px;justify-content:center;">
+                    <button class="btn btn-outline" id="confirm-cancel" style="min-width:100px;">
+                        Cancel
+                    </button>
+                    <button class="btn btn-primary" id="confirm-ok" style="min-width:100px;">
+                        OK
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(overlay);
+        
+        const cleanup = (result) => {
+            overlay.remove();
+            resolve(result);
+        };
+
+        overlay.querySelector('#confirm-cancel').addEventListener('click', () => cleanup(false));
+        overlay.querySelector('#confirm-ok').addEventListener('click', () => cleanup(true));
+        
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                cleanup(false);
+            }
+        });
+    });
+};
+
+// Override window.prompt with custom modal
+window.prompt = function(message, defaultValue = '') {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.style.cssText = `
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            animation: fadeIn 0.2s ease;
+        `;
+        
+        overlay.innerHTML = `
+            <div style="
+                background: var(--surface, #1a1f25);
+                border: 1px solid var(--border, #242c35);
+                border-radius: 12px;
+                padding: 28px 32px;
+                max-width: 440px;
+                width: 92%;
+                box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+            ">
+                <div style="text-align:center;margin-bottom:12px;">
+                    <div style="font-size:32px;">✏️</div>
+                </div>
+                <h3 style="
+                    font-family: 'Syne', sans-serif;
+                    font-size: 17px;
+                    font-weight: 700;
+                    color: var(--text, #e8edf2);
+                    margin: 0 0 6px 0;
+                    text-align: center;
+                ">Input Required</h3>
+                <p style="color:var(--text2);font-size:13px;text-align:center;margin:0 0 16px 0;">${escapeHtml(message)}</p>
+                <input type="text" id="_promptInput" 
+                       style="
+                           width:100%;
+                           padding:10px 12px;
+                           border-radius:8px;
+                           border:1px solid var(--border, #242c35);
+                           background: var(--input-bg, #111418);
+                           color: var(--text, #e8edf2);
+                           font-size:14px;
+                           outline:none;
+                       "
+                       placeholder="Enter value..."
+                       value="${escapeHtml(defaultValue)}"
+                       autofocus
+                >
+                <div style="display:flex;gap:10px;margin-top:16px;justify-content:center;">
+                    <button class="btn btn-outline" id="prompt-cancel" style="min-width:80px;">
+                        Cancel
+                    </button>
+                    <button class="btn btn-primary" id="prompt-ok" style="min-width:80px;">
+                        OK
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(overlay);
+        
+        const inputEl = overlay.querySelector('#_promptInput');
+        inputEl.focus();
+        inputEl.select();
+
+        const cleanup = (value) => {
+            overlay.remove();
+            resolve(value);
+        };
+
+        overlay.querySelector('#prompt-cancel').addEventListener('click', () => cleanup(null));
+        overlay.querySelector('#prompt-ok').addEventListener('click', () => cleanup(inputEl.value));
+        
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                cleanup(null);
+            }
+        });
+        
+        inputEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                cleanup(inputEl.value);
+            }
+        });
+    });
+};
+
+// Helper function used by overrides
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+
 // ── Section Navigation ───────────────────────────────
 async function showSection(sectionName) {
   // Hide all sections

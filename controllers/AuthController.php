@@ -46,8 +46,13 @@ class AuthController {
         $_SESSION['otp_expires'] = time() + 120; // 2 minutes
         
         // 3. Send Email
-        $mailService = new MailService();
-        $emailSent = $mailService->sendOTP($user['email'], $otp);
+        $emailSent = true;
+        if (!defined('TEST_MODE') || TEST_MODE !== true) {
+            $mailService = new MailService();
+            $emailSent = $mailService->sendOTP($user['email'], $otp);
+        } else {
+            error_log("TEST_MODE active. Bypassing email send. OTP is: {$otp}");
+        }
         
         if (!$emailSent) {
             error_log("FAILED to send OTP to {$user['email']}. OTP is: {$otp}");
@@ -247,8 +252,13 @@ class AuthController {
         $_SESSION['otp_expires'] = time() + 120; // 2 minutes
         
         // Send email
-        $mailService = new MailService();
-        $emailSent = $mailService->sendOTP($user['email'], $otp);
+        $emailSent = true;
+        if (!defined('TEST_MODE') || TEST_MODE !== true) {
+            $mailService = new MailService();
+            $emailSent = $mailService->sendOTP($user['email'], $otp);
+        } else {
+            error_log("TEST_MODE active. Bypassing email resend. OTP is: {$otp}");
+        }
         
         if (!$emailSent) {
             error_log("FAILED to resend OTP to {$user['email']}. OTP is: {$otp}");
