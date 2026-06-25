@@ -46,12 +46,15 @@ class AuthController {
         $_SESSION['otp_expires'] = time() + 120; // 2 minutes
         
         // 3. Send Email
+        $isCypress = isset($_SERVER['HTTP_X_CYPRESS_TEST']) 
+            || (isset($_SERVER['HTTP_USER_AGENT']) && stripos($_SERVER['HTTP_USER_AGENT'], 'Cypress') !== false);
+
         $emailSent = true;
-        if (!defined('TEST_MODE') || TEST_MODE !== true) {
+        if (!$isCypress) {
             $mailService = new MailService();
             $emailSent = $mailService->sendOTP($user['email'], $otp);
         } else {
-            error_log("TEST_MODE active. Bypassing email send. OTP is: {$otp}");
+            error_log("Cypress test detected. Bypassing email send. OTP is: {$otp}");
         }
         
         if (!$emailSent) {
@@ -252,12 +255,15 @@ class AuthController {
         $_SESSION['otp_expires'] = time() + 120; // 2 minutes
         
         // Send email
+        $isCypress = isset($_SERVER['HTTP_X_PRESS_TEST']) 
+            || (isset($_SERVER['HTTP_USER_AGENT']) && stripos($_SERVER['HTTP_USER_AGENT'], 'Cypress') !== false);
+
         $emailSent = true;
-        if (!defined('TEST_MODE') || TEST_MODE !== true) {
+        if (!$isCypress) {
             $mailService = new MailService();
             $emailSent = $mailService->sendOTP($user['email'], $otp);
         } else {
-            error_log("TEST_MODE active. Bypassing email resend. OTP is: {$otp}");
+            error_log("Cypress test detected. Bypassing email resend. OTP is: {$otp}");
         }
         
         if (!$emailSent) {
