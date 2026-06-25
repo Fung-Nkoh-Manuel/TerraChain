@@ -650,7 +650,9 @@ $disputes = $allDisputes;
             </div>
         </div>
     </div>
-    
+    <script>
+        window.CONTRACT_ADDRESS = "<?php echo defined('LAND_REGISTRY_CONTRACT') ? LAND_REGISTRY_CONTRACT : ''; ?>";
+    </script>
     <script src="assets/js/admin.js"></script>
 </body>
 </html>

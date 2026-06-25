@@ -37,23 +37,23 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
     cy.intercept("POST", "**/api/auth/login", (req) => {
       req.reply({
         success: true,
-        data: { user_id: 1, requires_otp: true }
+        data: { user_id: 1, requires_otp: true },
       });
     }).as("login");
 
     cy.intercept("POST", "**/api/auth/verify-otp", (req) => {
       req.reply({
         success: true,
-        data: { 
-          user: { 
-            id: 1, 
+        data: {
+          user: {
+            id: 1,
             username: req.body.username || "admin",
             full_name: "Admin User",
             role: req.body.username === "admin" ? "admin" : "user",
             email: "admin@terrachain.com",
-            wallet_address: "0x123456789abcdef"
-          }
-        }
+            wallet_address: "0x123456789abcdef",
+          },
+        },
       });
     }).as("verifyOtp");
 
@@ -62,52 +62,61 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
     // ── KYC ──────────────────────────────────────────────
     cy.intercept("POST", "**/api/kyc/submit", {
       success: true,
-      data: { 
+      data: {
         id: mockKYCId,
         status: "pending",
-        message: "KYC submitted successfully"
-      }
+        message: "KYC submitted successfully",
+      },
     }).as("kycSubmit");
 
     cy.intercept("GET", "**/api/kyc/status", (req) => {
       const statusMap = {
-        "testuser_tour": "verified",
-        "testuser2_tour": "verified",
-        "admin": "verified"
+        testuser_tour: "verified",
+        testuser2_tour: "verified",
+        admin: "verified",
       };
       const username = req.headers.cookie?.match(/username=([^;]+)/)?.[1] || "";
       req.reply({
         success: true,
-        data: { 
+        data: {
           status: statusMap[username] || "verified",
-          full_name: username === "testuser_tour" ? "Tour Test User" : "Admin User",
-          email: username === "testuser_tour" ? "testuser_tour@test.com" : "admin@terrachain.com",
-          submitted_at: new Date().toISOString()
-        }
+          full_name:
+            username === "testuser_tour" ? "Tour Test User" : "Admin User",
+          email:
+            username === "testuser_tour"
+              ? "testuser_tour@test.com"
+              : "admin@terrachain.com",
+          submitted_at: new Date().toISOString(),
+        },
       });
     }).as("kycStatus");
 
     cy.intercept("POST", "**/api/kyc/verify", {
       success: true,
-      data: { status: "verified" }
+      data: { status: "verified" },
     }).as("kycVerify");
 
     cy.intercept("GET", "**/api/kyc/pending", {
       success: true,
       data: [
-        { id: 1, full_name: "Test User", email: "test@test.com", submitted_at: new Date().toISOString() }
-      ]
+        {
+          id: 1,
+          full_name: "Test User",
+          email: "test@test.com",
+          submitted_at: new Date().toISOString(),
+        },
+      ],
     }).as("kycPending");
 
     // ── Parcels ──────────────────────────────────────────
     cy.intercept("POST", "**/api/parcels/submit", {
       success: true,
-      data: { 
+      data: {
         id: mockRegistrationId,
         parcel_number: mockParcelNumber,
         status: "pending",
-        message: "Registration submitted successfully"
-      }
+        message: "Registration submitted successfully",
+      },
     }).as("parcelSubmit");
 
     cy.intercept("POST", "**/api/parcels/approve", (req) => {
@@ -115,43 +124,43 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
         // Final approval with tx_hash
         req.reply({
           success: true,
-          data: { 
+          data: {
             status: "approved",
             tx_hash: req.body.tx_hash,
-            parcel_number: mockParcelNumber
-          }
+            parcel_number: mockParcelNumber,
+          },
         });
       } else {
         // Initial approval
         req.reply({
           success: true,
-          data: { 
+          data: {
             status: "pending_blockchain",
             document_hash: "Qm" + "b".repeat(44),
-            wallet_used: "0x123456789abcdef"
-          }
+            wallet_used: "0x123456789abcdef",
+          },
         });
       }
     }).as("parcelApprove");
 
     cy.intercept("POST", "**/api/parcels/reject", {
       success: true,
-      data: { status: "rejected" }
+      data: { status: "rejected" },
     }).as("parcelReject");
 
     cy.intercept("GET", "**/api/parcels/pending", {
       success: true,
       data: [
-        { 
+        {
           id: mockRegistrationId,
           title: "Tour Test Plot Alpha",
           location_address: "123 Test Street, Yaoundé",
           applicant_name: "Tour Test User",
           applicant_email: "testuser_tour@test.com",
           submitted_at: new Date().toISOString(),
-          document_url: "https://gateway.pinata.cloud/ipfs/QmTest123"
-        }
-      ]
+          document_url: "https://gateway.pinata.cloud/ipfs/QmTest123",
+        },
+      ],
     }).as("parcelsPending");
 
     cy.intercept("GET", "**/api/parcels/my", {
@@ -168,9 +177,9 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
           size_sqm: 500,
           gps_lat: 3.8721,
           gps_lng: 11.5082,
-          description: "Tour test parcel"
-        }
-      ]
+          description: "Tour test parcel",
+        },
+      ],
     }).as("parcelsMy");
 
     cy.intercept("GET", "**/api/parcels/all", {
@@ -183,7 +192,7 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
           location_address: "123 Test Street, Yaoundé",
           status: "owned",
           owner_name: "Tour Test User",
-          property_type: "residential"
+          property_type: "residential",
         },
         {
           id: 2,
@@ -192,9 +201,9 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
           location_address: "456 Tour Avenue, Douala",
           status: "owned",
           owner_name: "Tour Test User 2",
-          property_type: "commercial"
-        }
-      ]
+          property_type: "commercial",
+        },
+      ],
     }).as("parcelsAll");
 
     cy.intercept("GET", "**/api/parcels/get*", (req) => {
@@ -210,47 +219,45 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
           property_type: "residential",
           size_sqm: 500,
           description: "Tour test parcel",
-          documents: [
-            { file_name: "land-deed.pdf", ipfs_hash: "QmTest123" }
-          ]
-        }
+          documents: [{ file_name: "land-deed.pdf", ipfs_hash: "QmTest123" }],
+        },
       });
     }).as("parcelGet");
 
     // ── Transfers ─────────────────────────────────────────
     cy.intercept("POST", "**/api/transfers/request", {
       success: true,
-      data: { 
+      data: {
         id: mockTransferId,
         status: "pending",
-        message: "Transfer request submitted"
-      }
+        message: "Transfer request submitted",
+      },
     }).as("transferRequest");
 
     cy.intercept("POST", "**/api/transfers/approve", (req) => {
       if (req.body.tx_hash) {
         req.reply({
           success: true,
-          data: { 
+          data: {
             status: "approved",
-            tx_hash: req.body.tx_hash
-          }
+            tx_hash: req.body.tx_hash,
+          },
         });
       } else {
         req.reply({
           success: true,
-          data: { 
+          data: {
             status: "pending_blockchain",
             document_hash: "Qm" + "c".repeat(44),
-            new_owner_wallet: "0x987654321fedcba"
-          }
+            new_owner_wallet: "0x987654321fedcba",
+          },
         });
       }
     }).as("transferApprove");
 
     cy.intercept("POST", "**/api/transfers/reject", {
       success: true,
-      data: { status: "rejected" }
+      data: { status: "rejected" },
     }).as("transferReject");
 
     cy.intercept("GET", "**/api/transfers/all", {
@@ -263,9 +270,9 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
           recipient_name: "Tour Test User 2",
           transfer_type: "sale",
           status: "pending",
-          created_at: new Date().toISOString()
-        }
-      ]
+          created_at: new Date().toISOString(),
+        },
+      ],
     }).as("transfersAll");
 
     cy.intercept("GET", "**/api/transfers/my", {
@@ -276,28 +283,28 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
           parcel_title: "Tour Test Plot Alpha",
           transfer_type: "sale",
           status: "pending",
-          created_at: new Date().toISOString()
-        }
-      ]
+          created_at: new Date().toISOString(),
+        },
+      ],
     }).as("transfersMy");
 
     // ── Disputes ──────────────────────────────────────────
     cy.intercept("POST", "**/api/disputes/file", {
       success: true,
-      data: { 
+      data: {
         id: mockDisputeId,
         status: "open",
-        message: "Dispute filed successfully"
-      }
+        message: "Dispute filed successfully",
+      },
     }).as("disputeFile");
 
     cy.intercept("POST", "**/api/disputes/resolve", {
       success: true,
-      data: { 
+      data: {
         status: "resolved",
         document_hash: "Qm" + "d".repeat(44),
-        new_owner_wallet: "0x123456789abcdef"
-      }
+        new_owner_wallet: "0x123456789abcdef",
+      },
     }).as("disputeResolve");
 
     cy.intercept("POST", "**/api/disputes/get", {
@@ -317,8 +324,8 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
         created_at: new Date().toISOString(),
         votes: [],
         votes_for: 0,
-        votes_against: 0
-      }
+        votes_against: 0,
+      },
     }).as("disputeGet");
 
     cy.intercept("GET", "**/api/disputes/all", {
@@ -330,9 +337,9 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
           complainant_name: "Tour Test User",
           dispute_type: "ownership",
           status: "open",
-          created_at: new Date().toISOString()
-        }
-      ]
+          created_at: new Date().toISOString(),
+        },
+      ],
     }).as("disputesAll");
 
     // ── Notifications ─────────────────────────────────────
@@ -340,30 +347,36 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
       success: true,
       data: {
         notifications: [
-          { id: 1, title: "Welcome", message: "Welcome to TerraChain!", is_read: false, created_at: new Date().toISOString() }
+          {
+            id: 1,
+            title: "Welcome",
+            message: "Welcome to TerraChain!",
+            is_read: false,
+            created_at: new Date().toISOString(),
+          },
         ],
-        unread_count: 1
-      }
+        unread_count: 1,
+      },
     }).as("notifList");
 
     cy.intercept("POST", "**/api/notifications/read-all", {
-      success: true
+      success: true,
     }).as("notifReadAll");
 
     cy.intercept("POST", "**/api/notifications/mark-read-one", {
-      success: true
+      success: true,
     }).as("notifReadOne");
 
     // ── Wallet ────────────────────────────────────────────
     cy.intercept("POST", "**/api/auth/wallet", {
       success: true,
-      data: { wallet_address: "0x123456789abcdef" }
+      data: { wallet_address: "0x123456789abcdef" },
     }).as("walletConnect");
 
     // ── Blockchain Mock ───────────────────────────────────
     cy.intercept("POST", "**/api/blockchain/*", {
       success: true,
-      data: { tx_hash: mockTxHash }
+      data: { tx_hash: mockTxHash },
     }).as("blockchainCall");
 
     // ── Admin Details ─────────────────────────────────────
@@ -380,9 +393,9 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
         transfer_type: "sale",
         status: "pending",
         documents: [
-          { document_name: "transfer-agreement.pdf", ipfs_cid: "QmTest456" }
-        ]
-      }
+          { document_name: "transfer-agreement.pdf", ipfs_cid: "QmTest456" },
+        ],
+      },
     }).as("transferDetails");
 
     // ── User Info ─────────────────────────────────────────
@@ -391,19 +404,26 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
       let username = "admin";
       if (cookie.includes("testuser_tour")) username = "testuser_tour";
       else if (cookie.includes("testuser2_tour")) username = "testuser2_tour";
-      
+
       req.reply({
         success: true,
         data: {
           user: {
             id: username === "admin" ? 0 : 1,
             username: username,
-            email: username === "admin" ? "admin@terrachain.com" : username + "@test.com",
-            full_name: username === "admin" ? "Admin User" : 
-                      username === "testuser_tour" ? "Tour Test User" : "Tour Test User 2",
-            role: username === "admin" ? "admin" : "user"
-          }
-        }
+            email:
+              username === "admin"
+                ? "admin@terrachain.com"
+                : username + "@test.com",
+            full_name:
+              username === "admin"
+                ? "Admin User"
+                : username === "testuser_tour"
+                  ? "Tour Test User"
+                  : "Tour Test User 2",
+            role: username === "admin" ? "admin" : "user",
+          },
+        },
       });
     }).as("authMe");
   }
@@ -412,16 +432,16 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
   function loginWithMock(username, password, role = "user") {
     cy.visit("/login.php");
     cy.wait(500);
-    
+
     cy.get("#username").type(username);
     cy.get("#password").type(password);
     cy.get("#loginBtn").click();
-    
+
     // Wait for OTP form
     cy.get("#otpForm", { timeout: 15000 }).should("be.visible");
     cy.get("#otp").type("123456");
     cy.get("#verifyBtn").click();
-    
+
     // Wait for redirect
     const expectedUrl = role === "admin" ? "admin.php" : "dashboard.php";
     cy.url({ timeout: 15000 }).should("include", expectedUrl);
@@ -460,7 +480,7 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
     cy.get("#confirm_password").should("be.visible");
     cy.get('input[type="checkbox"]').should("be.visible");
     cy.get("#registerBtn").should("be.visible");
-    
+
     // Fill registration form (but it won't actually save)
     cy.get("#full_name").type("Tour Test User");
     cy.get("#username").type("testuser_tour");
@@ -471,7 +491,7 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
     cy.get("#confirm_password").type("TestPass123!");
     cy.get('input[type="checkbox"]').check();
     cy.get("#registerBtn").click();
-    
+
     // Should redirect to login
     cy.url({ timeout: 10000 }).should("include", "login.php");
     cy.contains("Sign In").should("be.visible");
@@ -489,12 +509,12 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
 
   it("logs in as user and shows dashboard", () => {
     loginWithMock("testuser_tour", "TestPass123!");
-    
+
     // Dashboard should be visible
     cy.get(".page-title").should("contain", "Dashboard");
     cy.get(".stats-grid").should("be.visible");
     cy.get(".stat-card").should("have.length.at.least", 3);
-    
+
     // Sidebar navigation should be visible
     cy.contains("My Properties").should("be.visible");
     cy.contains("Register Land").should("be.visible");
@@ -511,7 +531,7 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
     // Already logged in from previous test
     cy.contains("KYC Verification").click();
     cy.wait(500);
-    
+
     cy.get(".kyc-status").should("be.visible");
     cy.contains("Submit KYC Now").click();
     cy.get("#kycFileInput").should("be.visible");
@@ -523,12 +543,14 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
   it("shows registration form and submits (mocked)", () => {
     cy.contains("Register Land").click();
     cy.wait(500);
-    
+
     fillRegistrationForm();
     cy.get("#submitRegBtn").click();
-    
+
     // Should show success message
-    cy.contains("Registration submitted", { timeout: 10000 }).should("be.visible");
+    cy.contains("Registration submitted", { timeout: 10000 }).should(
+      "be.visible",
+    );
   });
 
   // ── 5. BROWSE PROPERTIES TOUR ──────────────────────────
@@ -536,7 +558,7 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
   it("shows all properties", () => {
     cy.contains("Browse All").click();
     cy.wait(500);
-    
+
     cy.get(".table-wrapper").should("be.visible");
     cy.get("tbody tr").should("have.length.at.least", 1);
     cy.contains("Tour Test Plot Alpha").should("be.visible");
@@ -547,7 +569,7 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
   it("shows user's properties", () => {
     cy.contains("My Properties").click();
     cy.wait(500);
-    
+
     cy.get(".table-wrapper").should("be.visible");
     cy.contains("Tour Test Plot Alpha").should("be.visible");
     cy.get("button:contains('Transfer')").should("be.visible");
@@ -558,17 +580,19 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
   it("shows transfer modal and submits", () => {
     cy.contains("My Properties").click();
     cy.wait(500);
-    
+
     cy.get("button:contains('Transfer')").first().click();
     cy.wait(500);
-    
+
     cy.get("#recipientEmail").should("be.visible");
     cy.get("#recipientEmail").type("testuser2_tour@test.com");
     cy.get("#transferType").select("sale");
     cy.get("#supportingDoc").attachFile("test-docs/transfer-agreement.pdf");
     cy.get("button:contains('Submit Transfer Request')").click();
-    
-    cy.contains("Transfer request submitted", { timeout: 10000 }).should("be.visible");
+
+    cy.contains("Transfer request submitted", { timeout: 10000 }).should(
+      "be.visible",
+    );
   });
 
   // ── 8. DISPUTE TOUR ────────────────────────────────────
@@ -576,17 +600,17 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
   it("shows dispute modal and submits", () => {
     cy.contains("Disputes").click();
     cy.wait(500);
-    
+
     cy.contains("File New Dispute").click();
     cy.wait(500);
-    
+
     cy.get("#disputeParcelNumber").type("TC-TOUR-001");
     cy.get("#disputeType").select("ownership");
     cy.get("#disputeRespondentEmail").type("testuser2_tour@test.com");
     cy.get("#disputeDescription").type("Test dispute - transfer was in error.");
     cy.get("#disputeEvidence").attachFile("test-docs/dispute-evidence.pdf");
     cy.get("button:contains('File Dispute')").click();
-    
+
     cy.contains("Dispute filed", { timeout: 10000 }).should("be.visible");
   });
 
@@ -595,7 +619,7 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
   it("shows transfers list", () => {
     cy.contains("My Transfers").click();
     cy.wait(500);
-    
+
     cy.get(".table-wrapper").should("be.visible");
     cy.contains("sale").should("be.visible");
   });
@@ -605,7 +629,7 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
   it("shows user profile", () => {
     cy.contains("Profile").click();
     cy.wait(500);
-    
+
     cy.get(".info-row").should("have.length.at.least", 3);
     cy.contains("testuser_tour").should("be.visible");
     cy.contains("testuser_tour@test.com").should("be.visible");
@@ -639,7 +663,7 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
   it("shows registrations tab", () => {
     cy.contains("Registrations").click();
     cy.wait(500);
-    
+
     cy.get(".table-wrapper").should("be.visible");
     cy.contains("Tour Test Plot Alpha").should("be.visible");
     cy.get("button:contains('Approve & Record')").should("be.visible");
@@ -649,7 +673,7 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
   it("shows KYC tab in admin", () => {
     cy.contains("KYC Verification").click();
     cy.wait(500);
-    
+
     cy.get(".table-wrapper").should("be.visible");
     cy.get("button:contains('Verify')").should("be.visible");
     cy.get("button:contains('Reject')").should("be.visible");
@@ -658,7 +682,7 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
   it("shows transfers tab in admin", () => {
     cy.contains("Transfers").click();
     cy.wait(500);
-    
+
     cy.get(".table-wrapper").should("be.visible");
     cy.get("button:contains('Approve & Record')").should("be.visible");
     cy.get("button:contains('Reject')").should("be.visible");
@@ -667,7 +691,7 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
   it("shows disputes tab in admin", () => {
     cy.contains("Disputes").click();
     cy.wait(500);
-    
+
     cy.get(".table-wrapper").should("be.visible");
     cy.get("button:contains('View')").should("be.visible");
     cy.get("button:contains('Resolve')").should("be.visible");
@@ -676,7 +700,7 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
   it("shows settings tab", () => {
     cy.contains("Settings").click();
     cy.wait(500);
-    
+
     cy.contains("Wallet Settings").should("be.visible");
     cy.get("button:contains('Connect MetaMask')").should("be.visible");
   });
@@ -684,7 +708,7 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
   it("shows blockchain tab", () => {
     cy.contains("Blockchain").click();
     cy.wait(500);
-    
+
     cy.contains("Blockchain Status").should("be.visible");
     cy.contains("Sepolia Testnet").should("be.visible");
   });
@@ -709,7 +733,7 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
   it("user 2 browses properties", () => {
     cy.contains("Browse All").click();
     cy.wait(500);
-    
+
     cy.get(".table-wrapper").should("be.visible");
     cy.contains("Tour Test Plot Alpha").should("be.visible");
     cy.contains("Tour Test Plot Beta").should("be.visible");
@@ -718,7 +742,7 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
   it("user 2 views their transfers", () => {
     cy.contains("My Transfers").click();
     cy.wait(500);
-    
+
     cy.get(".table-wrapper").should("be.visible");
   });
 
@@ -731,12 +755,12 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
 
   it("shows parcel history lookup", () => {
     loginWithMock("admin", "password", "admin");
-    
+
     // Scroll to history section
     cy.get("#historyQuery").should("be.visible");
     cy.get("#historyQuery").type("TC-TOUR-001");
     cy.get("#historySearchBtn").click();
-    
+
     // Wait for mocked response
     cy.wait(1000);
     cy.get("#historyResults").should("be.visible");
@@ -749,11 +773,11 @@ describe("TerraChain — Full Tour Mode (No Recording)", () => {
     cy.get("#checkOwnerAddr").should("be.visible");
     cy.get("#checkOwnerTime").should("be.visible");
     cy.get("#verifyTimeBtn").should("be.visible");
-    
+
     cy.get("#checkOwnerAddr").type("0x123456789abcdef");
     cy.get("#checkOwnerTime").type("2024-01-01T12:00");
     cy.get("#verifyTimeBtn").click();
-    
+
     cy.wait(1000);
     cy.get("#verifyTimeResult").should("be.visible");
   });

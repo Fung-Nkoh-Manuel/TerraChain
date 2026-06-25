@@ -14,7 +14,7 @@ const API_BASE = (function () {
   }
   return '/api';
 })();
-const CONTRACT_ADDRESS = '0x7589B43cea9A5061095d8e3a2C4413768A081A79';
+const CONTRACT_ADDRESS = window.CONTRACT_ADDRESS || '0x7589B43cea9A5061095d8e3a2C4413768A081A79';
 
 // Only the functions we actually call from the contract
 const CONTRACT_ABI = [
