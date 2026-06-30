@@ -1066,11 +1066,12 @@ $unreadCount = $notifService->getUnreadCount($user['id']);
         }
 
         function searchProperties(query) {
-            const cards = document.querySelectorAll('#browseGrid .property-card');
-            const q = query.toLowerCase();
-            cards.forEach(card => {
-                const searchData = card.dataset.search?.toLowerCase() || '';
-                card.style.display = searchData.includes(q) ? '' : 'none';
+            const q = query.toLowerCase().trim();
+            const rows = document.querySelectorAll('#browseTableBody tr');  // ✅ Changed this line
+            
+            rows.forEach(row => {
+                const searchData = row.dataset.search?.toLowerCase() || '';
+                row.style.display = (q === '' || searchData.includes(q)) ? '' : 'none';
             });
         }
 

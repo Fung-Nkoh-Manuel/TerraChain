@@ -31,41 +31,55 @@ if (isset($_SESSION['user_id'])) {
             <h1 class="auth-title">Create Account</h1>
             <p class="auth-subtitle">Join TerraChain to manage your land records</p>
             
-            <form id="registerForm" class="auth-form">
+            <div id="formErrors" style="display:none;"></div>
+            
+            <form id="registerForm" class="auth-form" novalidate>
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="full_name">Full Name</label>
+                        <label for="full_name">Full Name *</label>
                         <input type="text" id="full_name" name="full_name" required 
-                               placeholder="John Doe">
+                               placeholder="John Doe" autocomplete="name"
+                               pattern="^[A-Za-z\s\-']{2,50}$"
+                               title="2-50 letters, spaces, hyphens, and apostrophes only">
                     </div>
                     <div class="form-group">
-                        <label for="username">Username</label>
+                        <label for="username">Username *</label>
                         <input type="text" id="username" name="username" required 
-                               placeholder="johndoe" autocomplete="username">
+                               placeholder="johndoe" autocomplete="username"
+                               pattern="^[A-Za-z0-9_]{3,20}$"
+                               title="3-20 letters, numbers, and underscores only">
+                        <small style="color:var(--text3);font-size:11px;">3-20 characters, letters/numbers/underscore only</small>
                     </div>
                 </div>
                 
                 <div class="form-group">
-                    <label for="email">Email Address</label>
+                    <label for="email">Email Address *</label>
                     <input type="email" id="email" name="email" required 
-                           placeholder="john@example.com" autocomplete="email">
+                           placeholder="john@example.com" autocomplete="email"
+                           pattern="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+                           title="Enter a valid email address (e.g., name@domain.com)">
+                    <small style="color:var(--text3);font-size:11px;">Must be a valid email address</small>
                 </div>
                 
                 <div class="form-row">
                     <div class="form-group">
                         <label for="phone">Phone Number</label>
                         <input type="tel" id="phone" name="phone" 
-                               placeholder="+237 6XX XXX XXX">
+                               placeholder="+237 6XX XXX XXX"
+                               pattern="^(\+?[0-9]{1,4}[\s\-]?)?[0-9\s\-]{7,15}$"
+                               title="Enter a valid phone number">
                     </div>
                     <div class="form-group">
                         <label for="national_id">National ID</label>
                         <input type="text" id="national_id" name="national_id" 
-                               placeholder="ID number">
+                               placeholder="ID number"
+                               pattern="^[A-Za-z0-9\-]{5,30}$"
+                               title="5-30 letters, numbers, and hyphens only">
                     </div>
                 </div>
                 
                 <div class="form-group">
-                    <label for="password">Password</label>
+                    <label for="password">Password *</label>
                     <div class="password-input">
                         <input type="password" id="password" name="password" required 
                                placeholder="Min. 8 characters" minlength="8"
@@ -73,10 +87,16 @@ if (isset($_SESSION['user_id'])) {
                         <button type="button" class="toggle-password" onclick="togglePassword()">👁</button>
                     </div>
                     <div class="password-strength" id="passwordStrength"></div>
+                    <div class="password-requirements" id="passwordRequirements" style="font-size:11px;color:var(--text3);margin-top:4px;">
+                        <span id="reqLength">⬜ At least 8 characters</span><br>
+                        <span id="reqUpperLower">⬜ Uppercase & lowercase letters</span><br>
+                        <span id="reqNumber">⬜ At least one number</span><br>
+                        <span id="reqSpecial">⬜ At least one special character (!@#$%^&*)</span>
+                    </div>
                 </div>
                 
                 <div class="form-group">
-                    <label for="confirm_password">Confirm Password</label>
+                    <label for="confirm_password">Confirm Password *</label>
                     <input type="password" id="confirm_password" name="confirm_password" required 
                            placeholder="Re-enter your password" autocomplete="new-password">
                     <div class="password-match" id="passwordMatch"></div>
@@ -84,7 +104,7 @@ if (isset($_SESSION['user_id'])) {
                 
                 <div class="form-group">
                     <label class="checkbox-label">
-                        <input type="checkbox" required> I agree to the 
+                        <input type="checkbox" id="termsCheckbox" required> I agree to the 
                         <a href="terms.php" class="terms-link">Terms of Service</a> and 
                         <a href="privacy.php" class="terms-link">Privacy Policy</a>
                     </label>
@@ -116,25 +136,70 @@ if (isset($_SESSION['user_id'])) {
             return '/api';
         })();
 
-        // Password strength checker
+        // ── Password Requirements Tracking ──────────────────
+        function updatePasswordRequirements(password) {
+            const checks = {
+                length: password.length >= 8,
+                upperLower: /[a-z]/.test(password) && /[A-Z]/.test(password),
+                number: /[0-9]/.test(password),
+                special: /[^A-Za-z0-9]/.test(password)
+            };
+
+            const icons = {
+                length: document.getElementById('reqLength'),
+                upperLower: document.getElementById('reqUpperLower'),
+                number: document.getElementById('reqNumber'),
+                special: document.getElementById('reqSpecial')
+            };
+
+            Object.keys(checks).forEach(key => {
+                const el = icons[key];
+                if (checks[key]) {
+                    el.innerHTML = el.innerHTML.replace('⬜', '✅');
+                    el.style.color = '#00e5a0';
+                } else {
+                    el.innerHTML = el.innerHTML.replace('✅', '⬜');
+                    el.style.color = 'var(--text3)';
+                }
+            });
+
+            return checks;
+        }
+
+        // ── Password Strength Checker ──────────────────────
         document.getElementById('password').addEventListener('input', function() {
             const password = this.value;
             const strengthDiv = document.getElementById('passwordStrength');
             
+            // Update requirements
+            const checks = updatePasswordRequirements(password);
+            
+            // Calculate strength
             let strength = 0;
-            if (password.length >= 8) strength++;
-            if (password.match(/[a-z]/) && password.match(/[A-Z]/)) strength++;
-            if (password.match(/[0-9]/)) strength++;
-            if (password.match(/[^a-zA-Z0-9]/)) strength++;
+            if (checks.length) strength++;
+            if (checks.upperLower) strength++;
+            if (checks.number) strength++;
+            if (checks.special) strength++;
             
             const labels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
             const colors = ['', '#ff3b5c', '#ffcc00', '#4d9eff', '#00e5a0'];
+            const widths = ['', '25%', '50%', '75%', '100%'];
+            
+            if (password.length === 0) {
+                strengthDiv.textContent = '';
+                strengthDiv.style.background = '';
+                return;
+            }
             
             strengthDiv.textContent = labels[strength];
             strengthDiv.style.color = colors[strength];
+            strengthDiv.style.background = `linear-gradient(to right, ${colors[strength]} ${widths[strength]}, var(--bg2) ${widths[strength]})`;
+            strengthDiv.style.padding = '2px 8px';
+            strengthDiv.style.borderRadius = '4px';
+            strengthDiv.style.border = `1px solid ${colors[strength]}`;
         });
-        
-        // Password match checker
+
+        // ── Password Match Checker ──────────────────────────
         document.getElementById('confirm_password').addEventListener('input', function() {
             const password = document.getElementById('password').value;
             const matchDiv = document.getElementById('passwordMatch');
@@ -149,24 +214,127 @@ if (isset($_SESSION['user_id'])) {
                 matchDiv.style.color = '#ff3b5c';
             }
         });
-        
-        // Form submission
+
+        // ── Email Validation ─────────────────────────────────
+        document.getElementById('email').addEventListener('input', function() {
+            const email = this.value;
+            const valid = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email);
+            
+            if (email.length > 0 && !valid) {
+                this.style.borderColor = '#ff3b5c';
+                this.title = 'Please enter a valid email address';
+            } else {
+                this.style.borderColor = '';
+                this.title = '';
+            }
+        });
+
+        // ── Username Validation ─────────────────────────────
+        document.getElementById('username').addEventListener('input', function() {
+            const username = this.value;
+            const valid = /^[A-Za-z0-9_]{3,20}$/.test(username);
+            
+            if (username.length > 0 && !valid) {
+                this.style.borderColor = '#ff3b5c';
+                this.title = '3-20 characters, letters/numbers/underscore only';
+            } else {
+                this.style.borderColor = '';
+                this.title = '';
+            }
+        });
+
+        // ── Form Submission ──────────────────────────────────
         document.getElementById('registerForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
+            // ── Clear previous errors ──────────────────────
+            const errorContainer = document.getElementById('formErrors');
+            errorContainer.style.display = 'none';
+            errorContainer.innerHTML = '';
+            
+            // ── Get values ──────────────────────────────────
+            const fullName = document.getElementById('full_name').value.trim();
+            const username = document.getElementById('username').value.trim();
+            const email = document.getElementById('email').value.trim();
+            const phone = document.getElementById('phone').value.trim();
+            const nationalId = document.getElementById('national_id').value.trim();
             const password = document.getElementById('password').value;
             const confirm = document.getElementById('confirm_password').value;
+            const termsChecked = document.getElementById('termsCheckbox').checked;
             
-            if (password !== confirm) {
-                showError('Passwords do not match');
-                return;
+            const errors = [];
+            
+            // ── Full Name Validation ──────────────────────
+            if (fullName.length < 2 || fullName.length > 50) {
+                errors.push('Full name must be 2-50 characters');
+            }
+            if (!/^[A-Za-z\s\-']{2,50}$/.test(fullName)) {
+                errors.push('Full name can only contain letters, spaces, hyphens, and apostrophes');
             }
             
+            // ── Username Validation ────────────────────────
+            if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) {
+                errors.push('Username must be 3-20 characters (letters, numbers, underscores only)');
+            }
+            
+            // ── Email Validation ────────────────────────────
+            if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
+                errors.push('Please enter a valid email address');
+            }
+            
+            // ── Phone Validation (optional) ─────────────────
+            if (phone && !/^(\+?[0-9]{1,4}[\s\-]?)?[0-9\s\-]{7,15}$/.test(phone)) {
+                errors.push('Please enter a valid phone number');
+            }
+            
+            // ── National ID Validation (optional) ───────────
+            if (nationalId && !/^[A-Za-z0-9\-]{5,30}$/.test(nationalId)) {
+                errors.push('National ID must be 5-30 characters (letters, numbers, hyphens only)');
+            }
+            
+            // ── Password Validation ─────────────────────────
             if (password.length < 8) {
-                showError('Password must be at least 8 characters');
+                errors.push('Password must be at least 8 characters');
+            }
+            if (!/[a-z]/.test(password) || !/[A-Z]/.test(password)) {
+                errors.push('Password must contain both uppercase and lowercase letters');
+            }
+            if (!/[0-9]/.test(password)) {
+                errors.push('Password must contain at least one number');
+            }
+            if (!/[^A-Za-z0-9]/.test(password)) {
+                errors.push('Password must contain at least one special character (!@#$%^&*)');
+            }
+            
+            // ── Password Match ──────────────────────────────
+            if (password !== confirm) {
+                errors.push('Passwords do not match');
+            }
+            
+            // ── Terms Check ─────────────────────────────────
+            if (!termsChecked) {
+                errors.push('You must agree to the Terms of Service and Privacy Policy');
+            }
+            
+            // ── Show errors ─────────────────────────────────
+            if (errors.length > 0) {
+                errorContainer.style.display = 'block';
+                errorContainer.className = 'alert alert-error';
+                errorContainer.innerHTML = `
+                    <span class="alert-icon">❌</span>
+                    <div>
+                        <strong>Please fix the following errors:</strong>
+                        <ul style="margin:8px 0 0 18px;color:var(--text2);">
+                            ${errors.map(e => `<li>${e}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+                // Scroll to errors
+                errorContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 return;
             }
             
+            // ── Submit Registration ─────────────────────────
             const btn = document.getElementById('registerBtn');
             const btnText = btn.querySelector('.btn-text');
             const spinner = btn.querySelector('.spinner');
@@ -178,6 +346,7 @@ if (isset($_SESSION['user_id'])) {
             const formData = new FormData(this);
             const data = Object.fromEntries(formData.entries());
             delete data.confirm_password;
+            delete data.termsCheckbox;
             
             try {
                 const res = await fetch(`${API_BASE}/auth/register`, {
@@ -191,10 +360,27 @@ if (isset($_SESSION['user_id'])) {
                 if (result.success) {
                     window.location.href = 'login.php?registered=1';
                 } else {
-                    showError(result.data?.error || 'Registration failed');
+                    const msg = result.data?.error || result.error || 'Registration failed';
+                    errorContainer.style.display = 'block';
+                    errorContainer.className = 'alert alert-error';
+                    errorContainer.innerHTML = `
+                        <span class="alert-icon">❌</span>
+                        <div>
+                            <strong>Registration Failed</strong>
+                            <p style="margin-top:4px;">${escapeHtml(msg)}</p>
+                        </div>
+                    `;
                 }
             } catch(err) {
-                showError('Network error. Please try again.');
+                errorContainer.style.display = 'block';
+                errorContainer.className = 'alert alert-error';
+                errorContainer.innerHTML = `
+                    <span class="alert-icon">❌</span>
+                    <div>
+                        <strong>Network Error</strong>
+                        <p style="margin-top:4px;">Please check your internet connection and try again.</p>
+                    </div>
+                `;
             } finally {
                 btn.disabled = false;
                 btnText.style.display = '';
@@ -215,6 +401,13 @@ if (isset($_SESSION['user_id'])) {
         function togglePassword() {
             const input = document.getElementById('password');
             input.type = input.type === 'password' ? 'text' : 'password';
+        }
+        
+        function escapeHtml(str) {
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
         }
     </script>
 </body>
